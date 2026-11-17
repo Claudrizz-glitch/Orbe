@@ -1,5 +1,5 @@
 import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
-import { db } from '@/lib/server/db';
+import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { nextPosition } from '@/lib/server/workspace';
 import { CATEGORY_COLS } from '@/lib/types';
@@ -16,10 +16,9 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
     collapsed: v.optBool(b.collapsed, 'Recolhida'),
   });
   if (!Object.keys(patch).length) throw new ApiError(400, 'Nada para atualizar.');
-  const { data, error } = await db().from('categories').update(patch).eq('id', id).select(CATEGORY_COLS).maybeSingle();
-  if (error) throw error;
-  if (!data) throw new ApiError(404, 'Categoria não encontrada.');
-  return json(data);
+  const [row] = await store().update('categories', { eq: { id } }, patch, CATEGORY_COLS);
+  if (!row) throw new ApiError(404, 'Categoria não encontrada.');
+  return json(row);
 });
 
 /**
@@ -30,25 +29,19 @@ export const DELETE = protectedRoute<Ctx>(async (req, { params }) => {
   const id = v.uuid((await params).id);
   const mode = req.nextUrl.searchParams.get('channels') ?? 'keep';
   if (mode !== 'keep' && mode !== 'delete') throw new ApiError(400, 'Modo de exclusão inválido.');
+  const s = store();
 
-  const { data: cat, error: e1 } = await db().from('categories').select('id, space_id').eq('id', id).maybeSingle();
-  if (e1) throw e1;
+  const [cat] = await s.select<{ id: string; space_id: string }>('categories', { cols: 'id, space_id', eq: { id } });
   if (!cat) throw new ApiError(404, 'Categoria não encontrada.');
 
   if (mode === 'delete') {
-    const { error } = await db().from('channels').delete().eq('category_id', id);
-    if (error) throw error;
+    await s.remove('channels', { eq: { category_id: id } });
   } else {
     // Canais preservados vão para o fim da lista de canais sem categoria
-    const { data: kids, error } = await db().from('channels').select('id').eq('category_id', id).order('position');
-    if (error) throw error;
+    const kids = await s.select<{ id: string }>('channels', { cols: 'id', eq: { category_id: id }, order: [{ col: 'position' }] });
     let pos = await nextPosition('channels', { space_id: cat.space_id, category_id: null });
-    for (const ch of kids ?? []) {
-      const { error: e } = await db().from('channels').update({ category_id: null, position: pos++ }).eq('id', ch.id);
-      if (e) throw e;
-    }
+    for (const ch of kids) await s.update('channels', { eq: { id: ch.id } }, { category_id: null, position: pos++ }, 'id');
   }
-  const { error } = await db().from('categories').delete().eq('id', id);
-  if (error) throw error;
+  await s.remove('categories', { eq: { id } });
   return json({ ok: true });
 });

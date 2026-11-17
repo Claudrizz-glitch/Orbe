@@ -1,5 +1,5 @@
 import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
-import { db } from '@/lib/server/db';
+import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { nextPosition } from '@/lib/server/workspace';
 import { CHANNEL_COLS } from '@/lib/types';
@@ -9,9 +9,9 @@ type Ctx = { params: Promise<{ id: string }> };
 export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
   const id = v.uuid((await params).id);
   const b = await readBody(req);
+  const s = store();
 
-  const { data: current, error: e0 } = await db().from('channels').select('space_id, category_id').eq('id', id).maybeSingle();
-  if (e0) throw e0;
+  const [current] = await s.select<{ space_id: string; category_id: string | null }>('channels', { cols: 'space_id, category_id', eq: { id } });
   if (!current) throw new ApiError(404, 'Canal não encontrado.');
 
   let category_id: string | null | undefined;
@@ -19,9 +19,8 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
   if (b.category_id !== undefined) {
     category_id = b.category_id === null ? null : v.uuid(b.category_id, 'Categoria');
     if (category_id !== current.category_id) {
-      if (category_id) {
-        const { data } = await db().from('categories').select('space_id').eq('id', category_id).maybeSingle();
-        if (!data || data.space_id !== current.space_id) throw new ApiError(400, 'A categoria não pertence a este espaço.');
+      if (category_id && !(await s.count('categories', { eq: { id: category_id, space_id: current.space_id } }))) {
+        throw new ApiError(400, 'A categoria não pertence a este espaço.');
       }
       position = await nextPosition('channels', { space_id: current.space_id, category_id });
     } else {
@@ -43,19 +42,16 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
     position,
   });
   if (!Object.keys(patch).length) {
-    const { data } = await db().from('channels').select(CHANNEL_COLS).eq('id', id).single();
-    return json(data);
+    const [row] = await s.select('channels', { cols: CHANNEL_COLS, eq: { id } });
+    return json(row);
   }
-  const { data, error } = await db().from('channels').update(patch).eq('id', id).select(CHANNEL_COLS).single();
-  if (error) throw error;
-  return json(data);
+  const [row] = await s.update('channels', { eq: { id } }, patch, CHANNEL_COLS);
+  return json(row);
 });
 
 /** Exclui o canal e, em cascata, suas mensagens. */
 export const DELETE = protectedRoute<Ctx>(async (_req, { params }) => {
   const id = v.uuid((await params).id);
-  const { data, error } = await db().from('channels').delete().eq('id', id).select('id');
-  if (error) throw error;
-  if (!data?.length) throw new ApiError(404, 'Canal não encontrado.');
+  if (!(await store().remove('channels', { eq: { id } }))) throw new ApiError(404, 'Canal não encontrado.');
   return json({ ok: true });
 });

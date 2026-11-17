@@ -5,7 +5,7 @@ type P = SVGProps<SVGSVGElement> & { size?: number };
 function Svg({ size = 18, children, ...rest }: P & { children: React.ReactNode }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
-      strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...rest}>
+      strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...rest}>
       {children}
     </svg>
   );
@@ -28,4 +28,7 @@ export const IconLogout = (p: P) => <Svg {...p}><path d="M15 4h3a2 2 0 0 1 2 2v1
 export const IconCheck = (p: P) => <Svg {...p}><path d="m5 12 5 5 9-10" /></Svg>;
 export const IconAlert = (p: P) => <Svg {...p}><path d="M12 8v5M12 16.5v.5" /><circle cx="12" cy="12" r="9" /></Svg>;
 export const IconCloudOff = (p: P) => <Svg {...p}><path d="M3 3l18 18M8 7.5A6 6 0 0 1 17.6 10 4 4 0 0 1 20 17M17 18H7a5 5 0 0 1-1.6-9.7" /></Svg>;
-export const IconRefresh = (p: P) => <Svg {...p}><path d="M20 11a8 8 0 1 0-2 5.3M20 5v6h-6" /></Svg>;
+export const IconDiscord = (p: P) => <Svg {...p}><path d="M8.5 8.2c2.3-.7 4.7-.7 7 0M8 16c2.6.9 5.4.9 8 0" /><path d="M7.2 7c-1.5.6-2.6 1.3-2.6 1.3S3 11.5 3.2 16c1.3 1.6 3.3 2.2 3.3 2.2l1-1.7M16.8 7c1.5.6 2.6 1.3 2.6 1.3S21 11.5 20.8 16c-1.3 1.6-3.3 2.2-3.3 2.2l-1-1.7" /><circle cx="9.3" cy="12.6" r="1.1" /><circle cx="14.7" cy="12.6" r="1.1" /></Svg>;
+export const IconDownload = (p: P) => <Svg {...p}><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></Svg>;
+export const IconExternal = (p: P) => <Svg {...p}><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></Svg>;
+export const IconRefresh =(p: P) => <Svg {...p}><path d="M20 11a8 8 0 1 0-2 5.3M20 5v6h-6" /></Svg>;

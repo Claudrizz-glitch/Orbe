@@ -10,7 +10,6 @@ const PUBLIC_PATHS = ['/login', '/api/auth/login'];
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (PUBLIC_PATHS.includes(pathname)) return NextResponse.next();
-
   if (!req.cookies.has('orbe_session')) {
     if (pathname.startsWith('/api/')) {
       return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });

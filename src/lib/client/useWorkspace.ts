@@ -82,6 +82,7 @@ export function useWorkspace(initial: Workspace) {
   const deleteSpace = useCallback(async (id: string) => {
     await track(api(`/api/spaces/${id}`, { method: 'DELETE' }));
     setWs((w) => ({
+      ...w,
       spaces: w.spaces.filter((x) => x.id !== id),
       categories: w.categories.filter((x) => x.space_id !== id),
       channels: w.channels.filter((x) => x.space_id !== id),

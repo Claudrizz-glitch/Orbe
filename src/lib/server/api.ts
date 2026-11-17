@@ -1,6 +1,7 @@
 import 'server-only';
 import { NextResponse, type NextRequest } from 'next/server';
 import { hasValidSession } from './session';
+import { persist } from './store';
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) { super(message); }
@@ -29,7 +30,9 @@ export function protectedRoute<C>(handler: Handler<C>): Handler<C> {
     try {
       checkOrigin(req);
       if (!(await hasValidSession())) return fail(401, 'Sessão inválida ou expirada.');
-      return await handler(req, ctx);
+      const res = await handler(req, ctx);
+      await persist(); // no modo local, garante gravação em disco antes de responder
+      return res;
     } catch (e) {
       return handleError(e);
     }

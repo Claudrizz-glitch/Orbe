@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Category, Channel, Space, Workspace } from '@/lib/types';
+import type { Category, Channel, ImportJob, Space, Workspace } from '@/lib/types';
+import { DiscordImportDialog } from './DiscordImportDialog';
 import { shift, useWorkspace } from '@/lib/client/useWorkspace';
 import { api } from '@/lib/client/api';
 import { SpaceRail } from './SpaceRail';
@@ -40,6 +41,49 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   const [navHidden, setNavHidden] = useState(false);
   const [drawer, setDrawer] = useState(false);
   const [ready, setReady] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [job, setJob] = useState<ImportJob | null>(null);
+  const [paused, setPaused] = useState(false);
+
+  // ── Importação: chama etapas curtas no servidor até concluir ──
+  useEffect(() => {
+    if (!job || job.status !== 'running' || paused) return;
+    let alive = true;
+    (async () => {
+      let lastRefresh = Date.now();
+      while (alive) {
+        try {
+          const j = await api<ImportJob>(`/api/discord/import/${job.id}/step`, { method: 'POST' });
+          if (!alive) break;
+          setJob(j);
+          // Mostra canais e identidades novos enquanto importa
+          if (Date.now() - lastRefresh > 15000) { lastRefresh = Date.now(); w.refresh().catch(() => {}); }
+          if (j.status !== 'running') {
+            await w.refresh().catch(() => {});
+            if (j.status === 'done') toast.success(`“${j.name}” importado: ${j.stats.messages.toLocaleString('pt-BR')} mensagens.`);
+            else if (j.status === 'error') toast.error('A importação foi interrompida. Abra a janela de importação para continuar.');
+            break;
+          }
+        } catch (e) {
+          if (!alive) break;
+          toast.error(`Importação pausada: ${(e as Error).message}`);
+          setPaused(true);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.status, paused]);
+
+  async function jobAction(action: 'resume' | 'cancel') {
+    if (!job) return;
+    try { setJob(await api<ImportJob>(`/api/discord/import/${job.id}`, { method: 'PATCH', body: { action } })); setPaused(false); }
+    catch (e) { toast.error((e as Error).message); }
+  }
+
+  const identities = useMemo(() => new Map(w.ws.identities.map((i) => [i.id, i])), [w.ws.identities]);
 
   // ── Seleção inicial: URL → último canal usado → primeiro disponível ──
   useEffect(() => {
@@ -58,7 +102,8 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   // Mantém a URL coerente (permite favoritar / recarregar no mesmo canal)
   useEffect(() => {
     if (!ready) return;
-    const url = channelId ? `/?c=${channelId}` : spaceId ? `/?s=${spaceId}` : '/';
+    const base = window.location.pathname;
+    const url = channelId ? `${base}?c=${channelId}` : spaceId ? `${base}?s=${spaceId}` : base;
     if (window.location.pathname + window.location.search !== url) window.history.replaceState(null, '', url);
   }, [ready, spaceId, channelId]);
 
@@ -238,8 +283,10 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         <SpaceRail
           spaces={w.spaces}
           activeId={spaceId}
+          importJob={job}
           onSelect={selectSpace}
           onCreate={() => setDialog({ kind: 'space' })}
+          onImport={() => setImportOpen(true)}
           menuFor={spaceMenu}
         />
         {space ? (
@@ -275,11 +322,26 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         category={category}
         channel={channel}
         hasSpaces={w.spaces.length > 0}
+        identities={identities}
+        onImport={() => setImportOpen(true)}
         onToggleSidebar={toggleNav}
         onOpenDrawer={() => setDrawer(true)}
         onCreateSpace={() => setDialog({ kind: 'space' })}
         onCreateChannel={() => space && setDialog({ kind: 'channel', spaceId: space.id, categoryId: null })}
       />
+
+      {importOpen && (
+        <DiscordImportDialog
+          job={job}
+          paused={paused}
+          onStart={(j) => { setPaused(false); setJob(j); }}
+          onPause={() => setPaused(true)}
+          onResume={(j) => { if (j.status === 'running') { setPaused(false); setJob(j); } else void jobAction('resume'); }}
+          onCancel={() => { if (job?.status === 'running') void jobAction('cancel'); else setJob(null); }}
+          onOpenSpace={(id) => { void w.refresh().then(() => selectSpace(id)); }}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
 
       {dialog && (
         <EntityDialog

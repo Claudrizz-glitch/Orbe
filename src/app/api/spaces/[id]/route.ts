@@ -1,5 +1,5 @@
 import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
-import { db } from '@/lib/server/db';
+import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { SPACE_COLS } from '@/lib/types';
 
@@ -15,17 +15,14 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
     appearance: v.optObject(b.appearance, 'Aparência'),
   });
   if (!Object.keys(patch).length) throw new ApiError(400, 'Nada para atualizar.');
-  const { data, error } = await db().from('spaces').update(patch).eq('id', id).select(SPACE_COLS).maybeSingle();
-  if (error) throw error;
-  if (!data) throw new ApiError(404, 'Espaço não encontrado.');
-  return json(data);
+  const [row] = await store().update('spaces', { eq: { id } }, patch, SPACE_COLS);
+  if (!row) throw new ApiError(404, 'Espaço não encontrado.');
+  return json(row);
 });
 
 /** Exclui o espaço e, em cascata, suas categorias, canais e mensagens. */
 export const DELETE = protectedRoute<Ctx>(async (_req, { params }) => {
   const id = v.uuid((await params).id);
-  const { data, error } = await db().from('spaces').delete().eq('id', id).select('id');
-  if (error) throw error;
-  if (!data?.length) throw new ApiError(404, 'Espaço não encontrado.');
+  if (!(await store().remove('spaces', { eq: { id } }))) throw new ApiError(404, 'Espaço não encontrado.');
   return json({ ok: true });
 });

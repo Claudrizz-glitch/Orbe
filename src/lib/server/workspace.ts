@@ -1,27 +1,27 @@
 import 'server-only';
-import { db } from './db';
-import { CATEGORY_COLS, CHANNEL_COLS, SPACE_COLS, type Workspace } from '../types';
+import { store } from './store';
+import { CATEGORY_COLS, CHANNEL_COLS, IDENTITY_COLS, SPACE_COLS, type Workspace } from '../types';
+
+const byPos = [{ col: 'position' }, { col: 'created_at' }];
 
 export async function loadWorkspace(): Promise<Workspace> {
-  const [spaces, categories, channels] = await Promise.all([
-    db().from('spaces').select(SPACE_COLS).order('position').order('created_at'),
-    db().from('categories').select(CATEGORY_COLS).order('position').order('created_at'),
-    db().from('channels').select(CHANNEL_COLS).order('position').order('created_at'),
+  const s = store();
+  const [spaces, categories, channels, identities] = await Promise.all([
+    s.select('spaces', { cols: SPACE_COLS, order: byPos }),
+    s.select('categories', { cols: CATEGORY_COLS, order: byPos }),
+    s.select('channels', { cols: CHANNEL_COLS, order: byPos }),
+    s.select('identities', { cols: IDENTITY_COLS, order: byPos }),
   ]);
-  if (spaces.error) throw spaces.error;
-  if (categories.error) throw categories.error;
-  if (channels.error) throw channels.error;
-  return { spaces: spaces.data, categories: categories.data, channels: channels.data } as Workspace;
+  return { spaces, categories, channels, identities, storage: s.kind } as unknown as Workspace;
 }
 
 /** Próxima posição no final de uma lista. */
 export async function nextPosition(
-  table: 'spaces' | 'categories' | 'channels',
-  filter: Record<string, string | null> = {},
+  table: 'spaces' | 'categories' | 'channels' | 'identities',
+  eq: Record<string, string | null> = {},
 ): Promise<number> {
-  let q = db().from(table).select('position').order('position', { ascending: false }).limit(1);
-  for (const [k, v] of Object.entries(filter)) q = v === null ? q.is(k, null) : q.eq(k, v);
-  const { data, error } = await q;
-  if (error) throw error;
-  return data && data.length ? Number(data[0].position) + 1 : 0;
+  const [last] = await store().select<{ position: number }>(table, {
+    cols: 'position', eq, order: [{ col: 'position', asc: false }], limit: 1,
+  });
+  return last ? Number(last.position) + 1 : 0;
 }
