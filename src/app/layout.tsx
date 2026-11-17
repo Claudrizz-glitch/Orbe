@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
 import '@/styles/globals.css';
 import '@/styles/app.css';
+import '@/styles/editor.css';
 
 // Fontes servidas pelo próprio ORBE (baixadas no build, sem requisições ao Google em uso)
 const sans = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });

@@ -51,6 +51,22 @@ export function optObject(v: unknown, field: string): Record<string, unknown> | 
   return v as Record<string, unknown>;
 }
 
+/** Conteúdo de mensagem (Markdown). Preserva espaços e quebras de linha. */
+export function content(v: unknown): string {
+  if (typeof v !== 'string') throw new ApiError(400, 'Conteúdo inválido.');
+  const s = v.replace(/\r\n?/g, '\n').replace(/\s+$/, '');
+  if (s.length > 200000) throw new ApiError(400, 'A mensagem passou de 200 mil caracteres.');
+  return s;
+}
+
+/** Data/hora ISO 8601 válida entre os anos 1 e 9999. */
+export function isoDate(v: unknown, field = 'Data'): string {
+  if (typeof v !== 'string' || v.length > 40) throw new ApiError(400, `${field} inválida.`);
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime()) || d.getUTCFullYear() < 1 || d.getUTCFullYear() > 9999) throw new ApiError(400, `${field} inválida.`);
+  return d.toISOString();
+}
+
 /** Remove chaves undefined para montar o PATCH. */
 export function defined<T extends Record<string, unknown>>(o: T): Partial<T> {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>;

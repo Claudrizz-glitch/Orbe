@@ -232,6 +232,10 @@ export const localStore: Store = {
     await fs.writeFile(full, data);
   },
 
+  async removeFile(p) {
+    await fs.rm(safeFilePath(p), { force: true });
+  },
+
   async fileResponse(p, opts = {}) {
     let buf: Buffer;
     try { buf = await fs.readFile(safeFilePath(p)); }

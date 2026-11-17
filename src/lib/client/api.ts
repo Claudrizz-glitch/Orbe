@@ -8,6 +8,20 @@ export class RequestError extends Error {
  * fetch para os endpoints do ORBE. Converte respostas de erro em mensagens
  * legíveis e redireciona ao login quando a sessão expira.
  */
+/** Envio de arquivo (multipart). */
+export async function apiUpload<T = unknown>(path: string, form: FormData): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(path, { method: 'POST', body: form, credentials: 'same-origin' });
+  } catch {
+    throw new RequestError(0, 'Sem conexão com o servidor.');
+  }
+  if (res.status === 401) { window.location.href = '/login'; throw new RequestError(401, 'Sessão expirada.'); }
+  const data = await res.json().catch(() => null);
+  if (!res.ok) throw new RequestError(res.status, (data as { error?: string } | null)?.error ?? `Erro ${res.status}`);
+  return data as T;
+}
+
 export async function api<T = unknown>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   let res: Response;
   try {

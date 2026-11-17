@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Category, Channel, ImportJob, Space, Workspace } from '@/lib/types';
 import { DiscordImportDialog } from './DiscordImportDialog';
+import { IdentitiesDialog } from './IdentitiesDialog';
 import { shift, useWorkspace } from '@/lib/client/useWorkspace';
 import { api } from '@/lib/client/api';
 import { SpaceRail } from './SpaceRail';
@@ -84,6 +85,13 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   }
 
   const identities = useMemo(() => new Map(w.ws.identities.map((i) => [i.id, i])), [w.ws.identities]);
+
+  // Identidade ativa no campo de escrita (lembrada neste dispositivo)
+  const [activeIdentity, setActiveIdentity] = useState<string | null>(null);
+  const [identitiesOpen, setIdentitiesOpen] = useState(false);
+  useEffect(() => { setActiveIdentity(readLS<string | null>('orbe:active-identity', null)); }, []);
+  const chooseIdentity = (id: string) => { setActiveIdentity(id); writeLS('orbe:active-identity', id); };
+  const activeIdentityId = activeIdentity && identities.has(activeIdentity) ? activeIdentity : w.ws.identities.find((i) => i.is_owner)?.id ?? null;
 
   // ── Seleção inicial: URL → último canal usado → primeiro disponível ──
   useEffect(() => {
@@ -305,6 +313,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
             categoryMenu={categoryMenu}
             channelMenu={channelMenu}
             onLogout={logout}
+            onIdentities={() => setIdentitiesOpen(true)}
           />
         ) : (
           <aside className="sidebar sidebar--blank">
@@ -323,12 +332,19 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         channel={channel}
         hasSpaces={w.spaces.length > 0}
         identities={identities}
+        activeIdentityId={activeIdentityId}
+        onIdentityChange={chooseIdentity}
+        onManageIdentities={() => setIdentitiesOpen(true)}
         onImport={() => setImportOpen(true)}
         onToggleSidebar={toggleNav}
         onOpenDrawer={() => setDrawer(true)}
         onCreateSpace={() => setDialog({ kind: 'space' })}
         onCreateChannel={() => space && setDialog({ kind: 'channel', spaceId: space.id, categoryId: null })}
       />
+
+      {identitiesOpen && (
+        <IdentitiesDialog onClose={() => setIdentitiesOpen(false)} onChanged={() => { void w.refresh().catch(() => {}); }} />
+      )}
 
       {importOpen && (
         <DiscordImportDialog

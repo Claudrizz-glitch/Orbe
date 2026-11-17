@@ -3,6 +3,7 @@ export type Table =
   | 'import_jobs' | 'import_map' | 'access_sessions' | 'login_attempts';
 
 export type Row = Record<string, unknown>;
+export type StorageKind = 'local' | 'postgres' | 'supabase';
 
 export interface Filter {
   /** igualdade; valor null significa "IS NULL" */
@@ -25,7 +26,7 @@ export interface Query extends Filter {
  *  - local:    desenvolvimento/backup em disco (pasta orbe-data/)
  */
 export interface Store {
-  kind: 'local' | 'supabase';
+  kind: StorageKind;
   select<T = Row>(table: Table, q?: Query): Promise<T[]>;
   count(table: Table, f?: Filter): Promise<number>;
   insert<T = Row>(table: Table, rows: Row[], opts?: { ignoreDuplicatesOn?: string; cols?: string }): Promise<T[]>;
@@ -34,6 +35,7 @@ export interface Store {
   reorder(table: 'spaces' | 'categories' | 'channels' | 'identities', ids: string[]): Promise<void>;
   moveChannel(channelId: string, categoryId: string | null, orderedIds: string[]): Promise<void>;
   putFile(path: string, data: Uint8Array, contentType: string): Promise<void>;
+  removeFile(path: string): Promise<void>;
   /** Resposta HTTP que entrega o arquivo (stream local ou redirecionamento assinado). */
   fileResponse(path: string, opts?: { download?: string }): Promise<Response>;
 }

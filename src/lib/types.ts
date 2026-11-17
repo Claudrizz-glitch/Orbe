@@ -53,7 +53,7 @@ export interface Workspace {
   categories: Category[];
   channels: Channel[];
   identities: Identity[];
-  storage: 'local' | 'supabase';
+  storage: 'local' | 'postgres' | 'supabase';
 }
 
 export interface Attachment {
@@ -80,7 +80,13 @@ export interface Message {
   pinned_at: string | null;
   position: number;
   extra: { embeds?: Embed[]; stickers?: string[]; discord?: { author?: string } };
+  /** criação real (técnica, imutável) */
+  created_at: string;
+  /** última alteração técnica */
+  updated_at: string;
 }
+
+export interface IdentityWithCount extends Identity { message_count: number }
 
 export interface ReplyPreview { id: string; identity_id: string | null; content: string }
 
@@ -109,7 +115,7 @@ export interface ImportJob {
 
 export interface DiscordStatus {
   configured: boolean;
-  storage: 'local' | 'supabase';
+  storage: 'local' | 'postgres' | 'supabase';
   error?: string;
   bot?: { id: string; name: string };
   message_content?: boolean;
@@ -123,4 +129,4 @@ export const SPACE_COLS = 'id, name, icon, icon_path, color, appearance, positio
 export const CATEGORY_COLS = 'id, space_id, name, icon, color, collapsed, position';
 export const CHANNEL_COLS = 'id, space_id, category_id, name, icon, color, topic, sort_mode, position';
 export const IDENTITY_COLS = 'id, name, avatar_path, description, color, is_owner, position';
-export const MESSAGE_COLS = 'id, channel_id, identity_id, reply_to_id, content, display_at, edited_at, pinned_at, position, extra';
+export const MESSAGE_COLS = 'id, channel_id, identity_id, reply_to_id, content, display_at, edited_at, pinned_at, position, extra, created_at, updated_at';

@@ -3,7 +3,7 @@
 import type { Category, Channel, Space } from '@/lib/types';
 import type { SyncState } from '@/lib/client/useWorkspace';
 import { useContextMenu, type MenuEntry } from './ui/ContextMenu';
-import { IconAlert, IconCheck, IconChevron, IconCloudOff, IconFolder, IconHash, IconLogout, IconMore, IconPlus, IconRefresh } from './ui/Icons';
+import { IconAlert, IconCheck, IconChevron, IconCloudOff, IconFolder, IconHash, IconLogout, IconMore, IconPlus, IconRefresh, IconUsers } from './ui/Icons';
 
 interface Props {
   space: Space;
@@ -20,6 +20,7 @@ interface Props {
   categoryMenu: (c: Category) => MenuEntry[];
   channelMenu: (c: Channel) => MenuEntry[];
   onLogout: () => void;
+  onIdentities: () => void;
 }
 
 export function ChannelSidebar(p: Props) {
@@ -98,7 +99,10 @@ export function ChannelSidebar(p: Props) {
 
       <footer className="sidebar__foot">
         <SyncBadge state={p.sync} onRetry={p.onRetry} />
-        <button className="icon-btn" onClick={p.onLogout} aria-label="Sair" title="Sair"><IconLogout size={17} /></button>
+        <span style={{ display: 'flex', gap: 2 }}>
+          <button className="icon-btn" onClick={p.onIdentities} aria-label="Identidades" title="Identidades de autoria"><IconUsers size={17} /></button>
+          <button className="icon-btn" onClick={p.onLogout} aria-label="Sair" title="Sair"><IconLogout size={17} /></button>
+        </span>
       </footer>
     </aside>
   );

@@ -1,4 +1,4 @@
-import { ApiError, json, protectedRoute } from '@/lib/server/api';
+import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
 import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { MESSAGE_COLS, type Attachment, type Message, type MessagePage, type ReplyPreview } from '@/lib/types';
@@ -43,4 +43,29 @@ export const GET = protectedRoute<Ctx>(async (req, { params }) => {
 
   const page: MessagePage = { messages, attachments, replies, has_more };
   return json(page);
+});
+
+/**
+ * Cria uma mensagem no fim do canal.
+ * Body: { content, identity_id?, display_at? }
+ */
+export const POST = protectedRoute<Ctx>(async (req, { params }) => {
+  const channel_id = v.uuid((await params).id);
+  const b = await readBody(req);
+  const s = store();
+  if (!(await s.count('channels', { eq: { id: channel_id } }))) throw new ApiError(404, 'Canal não encontrado.');
+
+  const content = v.content(b.content);
+  if (!content.trim()) throw new ApiError(400, 'A mensagem está vazia.');
+  const identity_id = b.identity_id == null ? null : v.uuid(b.identity_id, 'Identidade');
+  if (identity_id && !(await s.count('identities', { eq: { id: identity_id } }))) throw new ApiError(400, 'Identidade não encontrada.');
+  const display_at = b.display_at === undefined ? new Date().toISOString() : v.isoDate(b.display_at, 'Data de exibição');
+
+  const [last] = await s.select<{ position: number }>('messages', {
+    cols: 'position', eq: { channel_id }, order: [{ col: 'position', asc: false }], limit: 1,
+  });
+  const [row] = await s.insert<Message>('messages', [{
+    channel_id, identity_id, content, display_at, position: last ? Number(last.position) + 1 : 0,
+  }], { cols: MESSAGE_COLS });
+  return json(row, 201);
 });

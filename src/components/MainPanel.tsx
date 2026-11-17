@@ -15,6 +15,9 @@ interface Props {
   onCreateSpace: () => void;
   onCreateChannel: () => void;
   onImport: () => void;
+  activeIdentityId: string | null;
+  onIdentityChange: (id: string) => void;
+  onManageIdentities: () => void;
 }
 
 export function MainPanel(p: Props) {
@@ -39,7 +42,8 @@ export function MainPanel(p: Props) {
       </header>
 
       {channel ? (
-        <MessageList key={channel.id} channel={channel} identities={p.identities} />
+        <MessageList key={channel.id} channel={channel} identities={p.identities}
+          activeIdentityId={p.activeIdentityId} onIdentityChange={p.onIdentityChange} onManageIdentities={p.onManageIdentities} />
       ) : (
         <div className="main__body">
           {!p.hasSpaces ? (
@@ -62,14 +66,6 @@ export function MainPanel(p: Props) {
         </div>
       )}
 
-      {channel && (
-        <div className="composer composer--disabled" aria-disabled="true">
-          <div className="composer__box">
-            <span>Escrever em #{channel.name}</span>
-            <span className="tag-soon">Fase 2</span>
-          </div>
-        </div>
-      )}
     </main>
   );
 }

@@ -80,6 +80,10 @@ export const supabaseStore: Store = {
     if (error) throw error;
   },
 
+  async removeFile(path) {
+    await db().storage.from(BUCKET).remove([path]);
+  },
+
   async fileResponse(path, opts = {}) {
     const { data, error } = await db().storage.from(BUCKET).createSignedUrl(path, 300, opts.download ? { download: opts.download } : undefined);
     if (error || !data) return NextResponse.json({ error: 'Arquivo não encontrado.' }, { status: 404 });

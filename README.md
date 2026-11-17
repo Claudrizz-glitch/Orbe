@@ -2,19 +2,20 @@
 
 Plataforma pessoal de organização, escrita e conhecimento — espaços, categorias e canais, com acesso por senha única e importação de servidores do Discord.
 
-**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Supabase (Postgres) · Vercel.
-Dependências de runtime: `next`, `react`, `react-dom`, `@supabase/supabase-js`, `server-only`.
+**Stack:** Next.js 16 (App Router) · React 19 · TypeScript · Postgres (Neon) · Vercel.
+Dependências de runtime: `next`, `react`, `react-dom`, `postgres`, `server-only` (e `@supabase/supabase-js`, opcional/legado).
 
 ## Arquitetura
 
 ```
-Navegador ──(cookie HttpOnly)──► Endpoints Next.js (/api/*) ──► Store (local em disco | Supabase)
+Navegador ──(cookie HttpOnly)──► Endpoints Next.js (/api/*) ──► Store (Neon/Postgres | local em disco | Supabase)
                                    │ valida sessão no servidor
                                    │ valida origem (CSRF) e entrada
 ```
 
 - O navegador **nunca** fala direto com o banco e não recebe nenhuma chave.
-- No Supabase, todas as tabelas têm RLS ativo **sem políticas** e privilégios de `anon`/`authenticated` revogados:
+- No Neon, o banco só aceita a connection string que fica no servidor (`DATABASE_URL`); não há API pública.
+- No Supabase (opcional), todas as tabelas têm RLS ativo **sem políticas** e privilégios de `anon`/`authenticated` revogados:
   a API pública não devolve nada, mesmo que alguém conheça a URL do projeto.
 - A senha fica apenas como hash **scrypt** em variável de ambiente. Sessões: token aleatório de 256 bits
   no cookie (`HttpOnly`, `SameSite=Lax`, `Secure` em produção); no banco só o SHA-256 do token.
@@ -25,11 +26,12 @@ Navegador ──(cookie HttpOnly)──► Endpoints Next.js (/api/*) ──► 
 src/
   app/            páginas (/, /login) e endpoints (/api/...)
   components/     interface (SpaceRail, ChannelSidebar, MainPanel, MessageList, DiscordImportDialog, ui/…)
-  lib/server/     código exclusivo do servidor (store local/Supabase, sessão, senha, Discord)
+  lib/server/     código exclusivo do servidor (store Postgres/local/Supabase, sessão, senha, Discord)
   lib/client/     chamadas à API e estado do espaço de trabalho
   lib/markdown.ts renderizador Markdown (dialeto Discord) seguro
   styles/         tokens de tema e layout
-supabase/migrations/   esquema SQL versionado
+db/schema.sql          esquema Postgres (Neon) — aplicado por npm run db:setup
+supabase/migrations/   esquema para Supabase (opcional)
 ```
 
 ## Armazenamento
@@ -37,7 +39,8 @@ supabase/migrations/   esquema SQL versionado
 | Modo | Onde ficam os dados | Uso |
 |---|---|---|
 | `local` | pasta `orbe-data/` (JSON + arquivos), fora do git | seu computador; serve de **backup** portátil |
-| `supabase` | Postgres + Storage (bucket privado `orbe-files`) | produção / Vercel / vários dispositivos |
+| `postgres` | Neon (Postgres); anexos na tabela `files` | **produção** / Vercel / vários dispositivos |
+| `supabase` | Postgres + Storage (bucket privado `orbe-files`) | alternativa |
 
 Defina `ORBE_STORAGE` no `.env.local`. O modo local é bloqueado em produção.
 
@@ -47,8 +50,13 @@ Defina `ORBE_STORAGE` no `.env.local`. O modo local é bloqueado em produção.
 2. Copie `.env.example` para `.env.local` e preencha `ORBE_PASSWORD_HASH` (gere com `npm run hash-password`) e `ORBE_SESSION_SECRET`.
 3. `npm run dev` → http://localhost:3000
 
-**Supabase (depois):** crie o projeto, execute `supabase/migrations/0001_initial_schema.sql` e
-`0002_import_and_files.sql`, preencha `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` e use `ORBE_STORAGE=supabase`.
+## Neon (banco na nuvem)
+
+1. No Neon: seu projeto → **Connect** → copie a *pooled connection string*.
+2. No `.env.local`: `DATABASE_URL=...` e `ORBE_STORAGE=postgres`.
+3. `npm run db:setup` — cria as tabelas (pode repetir sem risco).
+4. `npm run db:import-local` — copia o backup `orbe-data/` (servidores importados, identidades, anexos) para o Neon. Pode repetir: nunca duplica.
+5. Reinicie o `npm run dev`.
 
 ## Importar do Discord
 
@@ -73,7 +81,8 @@ Mensagens de sistema (entradas de membros, etc.) são ignoradas. Canais sem perm
 |---|---|---|
 | 1 | Fundação: projeto, banco, acesso por senha, layout, espaços/categorias/canais | ✅ |
 | — | Visual noturno · importação do Discord · leitura de mensagens · modo local | ✅ |
-| 2 | Escrever/editar mensagens, identidades, editor, datas editáveis | — |
+| 2 | Escrever/editar/duplicar/excluir mensagens, identidades (avatar, cor, mesclar), editor com formatação, datas editáveis | ✅ |
+| — | Banco Neon (Postgres) + migração do backup local | ✅ |
 | 3 | Arrastar e soltar, ordenação manual/cronológica, mover, respostas, fixar | — |
 | 4 | Envio de anexos pelo ORBE | — |
 | 5 | Seleção e exportação HTML/ZIP | — |
