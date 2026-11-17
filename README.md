@@ -83,7 +83,7 @@ Mensagens de sistema (entradas de membros, etc.) são ignoradas. Canais sem perm
 | — | Visual noturno · importação do Discord · leitura de mensagens · modo local | ✅ |
 | 2 | Escrever/editar/duplicar/excluir mensagens, identidades (avatar, cor, mesclar), editor com formatação, datas editáveis | ✅ |
 | — | Banco Neon (Postgres) + migração do backup local | ✅ |
-| 3 | Arrastar e soltar, ordenação manual/cronológica, mover, respostas, fixar | — |
+| 3 | Arrastar e soltar (mensagens, canais entre categorias, categorias, espaços — com toque), ordem manual/cronológica, mover mensagens entre canais, respostas, fixadas, link interno | ✅ |
 | 4 | Envio de anexos pelo ORBE | — |
 | 5 | Seleção e exportação HTML/ZIP | — |
 | 6 | Personalização visual (temas, cores, fontes, densidade) | — |

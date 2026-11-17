@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react';
 import { IconAlert, IconCheck, IconClose } from './Icons';
 
 type Kind = 'success' | 'error' | 'info';
@@ -38,9 +38,10 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 export function useToast() {
   const push = useContext(Ctx);
-  return {
+  // Objeto estável: pode ser usado em dependências de hooks sem disparar efeitos a cada render
+  return useMemo(() => ({
     success: (t: string) => push('success', t),
     error: (t: string) => push('error', t),
     info: (t: string) => push('info', t),
-  };
+  }), [push]);
 }

@@ -32,7 +32,7 @@ export interface Store {
   insert<T = Row>(table: Table, rows: Row[], opts?: { ignoreDuplicatesOn?: string; cols?: string }): Promise<T[]>;
   update<T = Row>(table: Table, f: Filter, patch: Row, cols?: string): Promise<T[]>;
   remove(table: Table, f: Filter): Promise<number>;
-  reorder(table: 'spaces' | 'categories' | 'channels' | 'identities', ids: string[]): Promise<void>;
+  reorder(table: 'spaces' | 'categories' | 'channels' | 'identities' | 'messages', ids: string[]): Promise<void>;
   moveChannel(channelId: string, categoryId: string | null, orderedIds: string[]): Promise<void>;
   putFile(path: string, data: Uint8Array, contentType: string): Promise<void>;
   removeFile(path: string): Promise<void>;

@@ -14,11 +14,13 @@ interface Props {
   onIdentityChange: (id: string) => void;
   onManageIdentities: () => void;
   onSend: (content: string) => void;
+  replyTo: { name: string; text: string } | null;
+  onCancelReply: () => void;
 }
 
 const draftKey = (id: string) => `orbe:draft:${id}`;
 
-export function Composer({ channel, identities, activeIdentityId, onIdentityChange, onManageIdentities, onSend }: Props) {
+export function Composer({ channel, identities, activeIdentityId, onIdentityChange, onManageIdentities, onSend, replyTo, onCancelReply }: Props) {
   // Rascunho guardado neste dispositivo enquanto não é enviado
   const [text, setText] = useState(() => {
     try { return localStorage.getItem(draftKey(channel.id)) ?? ''; } catch { return ''; }
@@ -42,8 +44,17 @@ export function Composer({ channel, identities, activeIdentityId, onIdentityChan
     editor.current?.focus();
   }
 
+  // Ao escolher "Responder", o foco vai para o campo de escrita
+  useEffect(() => { if (replyTo) editor.current?.focus(); }, [replyTo]);
+
   return (
     <div className="composer">
+      {replyTo && (
+        <div className="replying">
+          <span>Respondendo a <b>{replyTo.name}</b>: <span className="replying__text">{replyTo.text || 'anexo'}</span></span>
+          <button className="icon-btn icon-btn--sm" onClick={onCancelReply} aria-label="Cancelar resposta" title="Cancelar resposta (Esc)">×</button>
+        </div>
+      )}
       {picking && (
         <IdentityPicker
           identities={identities}
@@ -58,6 +69,7 @@ export function Composer({ channel, identities, activeIdentityId, onIdentityChan
         value={text}
         onChange={setText}
         onSubmit={send}
+        onCancel={replyTo ? onCancelReply : undefined}
         placeholder={`Escrever em #${channel.name} como ${active?.name ?? '…'}`}
         leading={
           <button type="button" className="who" onClick={() => setPicking((p) => !p)} title="Escolher quem está falando"

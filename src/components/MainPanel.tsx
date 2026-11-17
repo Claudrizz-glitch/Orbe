@@ -1,7 +1,7 @@
 'use client';
 
-import type { Category, Channel, Identity, Space } from '@/lib/types';
-import { MessageList } from './MessageList';
+import type { Category, Channel, Identity, SortMode, Space } from '@/lib/types';
+import { MessageList, type ChannelOption } from './MessageList';
 import { IconDiscord, IconHash, IconMenu, IconOrbit, IconPlus, IconSidebar } from './ui/Icons';
 
 interface Props {
@@ -18,6 +18,11 @@ interface Props {
   activeIdentityId: string | null;
   onIdentityChange: (id: string) => void;
   onManageIdentities: () => void;
+  channelOptions: ChannelOption[];
+  jumpTo: string | null;
+  onJumped: () => void;
+  onSortModeChange: (mode: SortMode) => Promise<void>;
+  onOpenChannel: (channelId: string, messageId?: string) => void;
 }
 
 export function MainPanel(p: Props) {
@@ -39,11 +44,14 @@ export function MainPanel(p: Props) {
         ) : (
           <div className="main__title"><h2>{space?.name ?? 'ORBE'}</h2></div>
         )}
+        {/* Ações do canal (ordem, fixadas) são renderizadas aqui pelo MessageList */}
+        {channel && <div id="chan-actions" key={channel.id} className="main__actions" />}
       </header>
 
       {channel ? (
-        <MessageList key={channel.id} channel={channel} identities={p.identities}
-          activeIdentityId={p.activeIdentityId} onIdentityChange={p.onIdentityChange} onManageIdentities={p.onManageIdentities} />
+        <MessageList key={channel.id} channel={channel} identities={p.identities} channels={p.channelOptions}
+          activeIdentityId={p.activeIdentityId} onIdentityChange={p.onIdentityChange} onManageIdentities={p.onManageIdentities}
+          jumpTo={p.jumpTo} onJumped={p.onJumped} onSortModeChange={p.onSortModeChange} onOpenChannel={p.onOpenChannel} />
       ) : (
         <div className="main__body">
           {!p.hasSpaces ? (
@@ -65,7 +73,6 @@ export function MainPanel(p: Props) {
           )}
         </div>
       )}
-
     </main>
   );
 }

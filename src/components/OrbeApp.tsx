@@ -88,6 +88,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
 
   // Identidade ativa no campo de escrita (lembrada neste dispositivo)
   const [activeIdentity, setActiveIdentity] = useState<string | null>(null);
+  const [jumpTo, setJumpTo] = useState<string | null>(null);
   const [identitiesOpen, setIdentitiesOpen] = useState(false);
   useEffect(() => { setActiveIdentity(readLS<string | null>('orbe:active-identity', null)); }, []);
   const chooseIdentity = (id: string) => { setActiveIdentity(id); writeLS('orbe:active-identity', id); };
@@ -99,6 +100,8 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
     const c = params.get('c');
     const s = params.get('s');
     const ch = c ? w.ws.channels.find((x) => x.id === c) : undefined;
+    const m = params.get('m');
+    if (ch && m && /^[0-9a-f-]{36}$/i.test(m)) setJumpTo(m);
     if (ch) { setSpaceId(ch.space_id); setChannelId(ch.id); }
     else if (s && w.ws.spaces.some((x) => x.id === s)) selectSpace(s);
     else if (w.spaces[0]) selectSpace(w.spaces[0].id);
@@ -155,6 +158,26 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
     setDrawer(false);
     if (spaceId) writeLS(LS_LAST, { ...readLS<Record<string, string>>(LS_LAST, {}), [spaceId]: id });
   }
+
+  /** Abre um canal (de qualquer espaço) e, opcionalmente, vai até uma mensagem. */
+  function openChannel(id: string, messageId?: string) {
+    const ch = w.ws.channels.find((c) => c.id === id);
+    if (!ch) { toast.error('Esse canal não existe mais.'); return; }
+    setSpaceId(ch.space_id);
+    setChannelId(ch.id);
+    setDrawer(false);
+    if (messageId) setJumpTo(messageId);
+  }
+
+  // Lista de canais para "Mover para outro canal"
+  const channelOptions = useMemo(() => {
+    const spaceName = new Map(w.ws.spaces.map((s) => [s.id, s.name]));
+    const catName = new Map(w.ws.categories.map((c) => [c.id, c.name]));
+    const spacePos = new Map(w.spaces.map((s, i) => [s.id, i]));
+    return [...w.ws.channels]
+      .sort((a, b) => (spacePos.get(a.space_id) ?? 0) - (spacePos.get(b.space_id) ?? 0) || a.position - b.position)
+      .map((c) => ({ id: c.id, name: c.name, path: [spaceName.get(c.space_id), c.category_id ? catName.get(c.category_id) : null].filter(Boolean).join(' / ') }));
+  }, [w.ws.channels, w.ws.categories, w.ws.spaces, w.spaces]);
 
   /** Executa uma ação mostrando erro em notificação (nunca falha em silêncio). */
   async function run(fn: () => Promise<unknown>, ok?: string) {
@@ -295,6 +318,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
           onSelect={selectSpace}
           onCreate={() => setDialog({ kind: 'space' })}
           onImport={() => setImportOpen(true)}
+          onReorder={(ids) => run(() => w.reorder('spaces', ids))}
           menuFor={spaceMenu}
         />
         {space ? (
@@ -314,6 +338,9 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
             channelMenu={channelMenu}
             onLogout={logout}
             onIdentities={() => setIdentitiesOpen(true)}
+            onReorderCategories={(ids) => run(() => w.reorder('categories', ids))}
+            onReorderChannels={(ids) => run(() => w.reorder('channels', ids))}
+            onMoveChannel={(chId, catId, ids) => run(() => w.moveChannel(chId, catId, ids))}
           />
         ) : (
           <aside className="sidebar sidebar--blank">
@@ -335,6 +362,11 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         activeIdentityId={activeIdentityId}
         onIdentityChange={chooseIdentity}
         onManageIdentities={() => setIdentitiesOpen(true)}
+        channelOptions={channelOptions}
+        jumpTo={jumpTo}
+        onJumped={() => setJumpTo(null)}
+        onSortModeChange={async (mode) => { if (channel) { await w.updateChannel(channel.id, { sort_mode: mode }); toast.success(mode === 'manual' ? 'Ordem manual: arraste as mensagens para reorganizar.' : 'Mensagens ordenadas pela data exibida.'); } }}
+        onOpenChannel={openChannel}
         onImport={() => setImportOpen(true)}
         onToggleSidebar={toggleNav}
         onOpenDrawer={() => setDrawer(true)}

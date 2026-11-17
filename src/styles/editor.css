@@ -115,3 +115,72 @@
   .ids__list ul { max-height: 180px; }
   .who { max-width: 120px; }
 }
+
+/* ═══════════════ Fase 3 — organização ═══════════════ */
+
+/* Ações do canal no cabeçalho */
+.main__actions { display: flex; align-items: center; gap: 4px; margin-left: auto; flex: none; }
+.hbtn {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 8px;
+  color: var(--text-muted); font-size: .8rem; transition: background .15s, color .15s;
+}
+.hbtn:hover { background: var(--hover); color: var(--text); }
+.hbtn.is-on { background: var(--accent-soft); color: var(--accent); }
+
+/* Alça de arraste da mensagem */
+.msg__grip {
+  position: absolute; left: 2px; top: 8px; width: 18px; height: 26px; border-radius: 5px; display: none; place-items: center;
+  color: var(--text-faint); cursor: grab; touch-action: none;
+}
+.msg__grip:hover { color: var(--text-soft); background: var(--hover); }
+.msg:hover .msg__grip, .msg.is-tapped .msg__grip, .msg__grip:focus-visible { display: grid; }
+.msg--cont .msg__grip { top: 2px; }
+.is-dragging { position: relative; z-index: 5; opacity: .92; }
+.is-dragging .msg { background: var(--surface); box-shadow: var(--shadow); border-radius: 10px; }
+.msg.is-pinned { box-shadow: inset 2px 0 0 color-mix(in srgb, var(--warning) 55%, transparent); }
+.msg__pin { display: inline-flex; align-items: center; gap: 3px; }
+
+/* Respondendo a… */
+.replying {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 8px 6px 14px; margin-bottom: 6px;
+  border-radius: 10px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--border); font-size: .8rem; color: var(--text-muted);
+}
+.replying > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.replying b { color: var(--text-soft); font-weight: 500; }
+.replying__text { color: var(--text-faint); }
+
+/* Fixadas */
+.pins { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.pin { display: flex; gap: 12px; padding: 10px 12px; border-radius: 10px; text-align: left; box-shadow: inset 0 0 0 1px var(--border); transition: background .15s; }
+.pin:hover { background: var(--hover); }
+.pin .msg__avatar { margin: 0; flex: none; }
+.pin__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pin__head { display: flex; gap: 8px; align-items: baseline; }
+.pin__head b { font-weight: 500; font-size: .86rem; }
+.pin__head small { font-size: .7rem; color: var(--text-faint); }
+.pin__text { font-size: .85rem; color: var(--text-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Escolher canal */
+.chpick { display: flex; flex-direction: column; gap: 1px; max-height: 50vh; overflow-y: auto; }
+.chpick__item { width: 100%; display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; text-align: left; color: var(--text-soft); font-size: .88rem; }
+.chpick__item:hover { background: var(--hover); color: var(--text); }
+.chpick__item svg { color: var(--text-faint); flex: none; }
+.chpick__item span { flex: none; }
+.chpick__item small { margin-left: auto; color: var(--text-faint); font-size: .72rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Arrastar na barra lateral */
+.chan-zone { border-radius: 8px; min-height: 4px; transition: background .15s; }
+.chan-zone.is-over { background: rgba(169, 156, 255, .05); }
+.zone-hint { font-size: .74rem; color: var(--text-faint); padding: 6px 10px; border: 1px dashed var(--border-strong); border-radius: 8px; margin: 2px 0 6px; }
+.cat.is-drop .cat__head { background: var(--accent-soft); border-radius: 7px; }
+.cat.is-dragging { opacity: .9; background: var(--bg-side); border-radius: 8px; box-shadow: var(--shadow-sm); }
+.chan.is-overlay { background: var(--surface-2); color: var(--text); box-shadow: var(--shadow); cursor: grabbing; }
+.chan__main { touch-action: manipulation; }
+.sidebar.is-sorting .chan__main, .sidebar.is-sorting .cat__toggle { cursor: grabbing; }
+.rail__item.is-dragging { z-index: 5; }
+.rail__item.is-dragging .orb { box-shadow: 0 10px 30px -8px rgba(0, 0, 0, .8); }
+
+@media (max-width: 767px) {
+  .hbtn span { display: none; }
+  .hbtn { padding: 0 8px; }
+}

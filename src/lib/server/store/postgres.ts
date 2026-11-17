@@ -128,7 +128,7 @@ export const postgresStore: Store = {
   },
 
   async reorder(t, ids) {
-    if (!['spaces', 'categories', 'channels', 'identities'].includes(t)) throw new Error('Tabela não permitida.');
+    if (!['spaces', 'categories', 'channels', 'identities', 'messages'].includes(t)) throw new Error('Tabela não permitida.');
     await sql().unsafe(
       `update "${t}" x set position = o.ord - 1 from unnest($1::uuid[]) with ordinality as o(id, ord) where x.id = o.id`,
       [ids] as never[],

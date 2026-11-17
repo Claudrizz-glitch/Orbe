@@ -7,7 +7,7 @@ type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * Edita uma mensagem — sem limite de tempo.
- * Body (todos opcionais): { content, identity_id, display_at }
+ * Body (todos opcionais): { content, identity_id, display_at, pinned }
  *  - content altera edited_at (última edição pelo usuário)
  *  - display_at altera apenas a data EXIBIDA; created_at nunca muda
  */
@@ -31,6 +31,10 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
     patch.identity_id = identity_id;
   }
   if (b.display_at !== undefined) patch.display_at = v.isoDate(b.display_at, 'Data de exibição');
+  if (b.pinned !== undefined) {
+    if (typeof b.pinned !== 'boolean') throw new ApiError(400, 'Valor de “fixada” inválido.');
+    patch.pinned_at = b.pinned ? new Date().toISOString() : null;
+  }
 
   if (!Object.keys(patch).length) {
     const [row] = await s.select<Message>('messages', { cols: MESSAGE_COLS, eq: { id } });

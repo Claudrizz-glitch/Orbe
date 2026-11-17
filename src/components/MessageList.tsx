@@ -1,10 +1,16 @@
 'use client';
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  DndContext, KeyboardSensor, PointerSensor, TouchSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core';
+import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { api } from '@/lib/client/api';
 import { plainText, renderMarkdown } from '@/lib/markdown';
-import type { Attachment, Channel, Identity, Message, MessagePage, ReplyPreview } from '@/lib/types';
-import { IconAlert, IconEdit, IconHash, IconMore, IconRefresh, IconTrash } from './ui/Icons';
+import type { Attachment, Channel, Identity, Message, MessagePage, ReplyPreview, SortMode } from '@/lib/types';
+import { IconAlert, IconEdit, IconGrip, IconHash, IconLink, IconMore, IconMove, IconPin, IconRefresh, IconReply, IconSort, IconTrash } from './ui/Icons';
 import { useContextMenu, type MenuEntry } from './ui/ContextMenu';
 import { useConfirm } from './ui/ConfirmDialog';
 import { useToast } from './ui/Toasts';
@@ -13,16 +19,23 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { Composer } from './Composer';
 import { IdentityPicker } from './IdentityPicker';
 
+export interface ChannelOption { id: string; name: string; path: string }
+
 interface Props {
   channel: Channel;
   identities: Map<string, Identity>;
+  channels: ChannelOption[];
   activeIdentityId: string | null;
+  jumpTo: string | null;
+  onJumped: () => void;
   onIdentityChange: (id: string) => void;
   onManageIdentities: () => void;
+  onSortModeChange: (mode: SortMode) => Promise<void>;
+  onOpenChannel: (channelId: string, messageId?: string) => void;
 }
 
 /** Mensagem local ainda não confirmada pelo servidor */
-interface Pending { tmp: string; content: string; identity_id: string | null; display_at: string; status: 'sending' | 'failed'; error?: string }
+interface Pending { tmp: string; content: string; identity_id: string | null; reply_to_id: string | null; display_at: string; status: 'sending' | 'failed'; error?: string }
 
 const GROUP_MS = 7 * 60 * 1000;
 const fmtTime = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -77,13 +90,110 @@ function withEdited(html: string, editedAt: string | null) {
   return html.endsWith('</p>') ? `${html.slice(0, -4)}${tag}</p>` : html + tag;
 }
 
-function sortMessages(list: Message[], mode: Channel['sort_mode']) {
+function sortMessages(list: Message[], mode: SortMode) {
   return [...list].sort((a, b) => mode === 'chronological'
     ? a.display_at.localeCompare(b.display_at) || a.position - b.position
     : a.position - b.position || a.display_at.localeCompare(b.display_at));
 }
 
-export function MessageList({ channel, identities, activeIdentityId, onIdentityChange, onManageIdentities }: Props) {
+// ─────────────────────────────────────────────────────────────
+// Uma mensagem (arrastável no modo manual)
+// ─────────────────────────────────────────────────────────────
+interface RowProps {
+  m: Message;
+  identities: Map<string, Identity>;
+  newDay: boolean;
+  cont: boolean;
+  reply: ReplyPreview | undefined;
+  atts: Attachment[] | undefined;
+  editing: { text: string; saving: boolean } | null;
+  tapped: boolean;
+  draggable: boolean;
+  menu: MenuEntry[];
+  onTap: () => void;
+  onEditStart: () => void;
+  onEditChange: (t: string) => void;
+  onEditSave: () => void;
+  onEditCancel: () => void;
+  onReply: () => void;
+  onJump: (id: string) => void;
+}
+
+const MessageRow = memo(function MessageRow(p: RowProps) {
+  const { m } = p;
+  const ctx = useContextMenu();
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: m.id, disabled: !p.draggable });
+  const idn = m.identity_id ? p.identities.get(m.identity_id) : undefined;
+  const replyIdn = p.reply?.identity_id ? p.identities.get(p.reply.identity_id) : undefined;
+  const d = new Date(m.display_at);
+  const style = { transform: CSS.Translate.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style} className={isDragging ? 'is-dragging' : undefined}>
+      {p.newDay && <div className="day-sep">{fmtDay.format(d)}</div>}
+      <article id={`msg-${m.id}`}
+        className={`msg ${p.cont ? 'msg--cont' : ''} ${m.reply_to_id ? 'msg--reply' : ''} ${p.editing ? 'is-editing' : ''} ${p.tapped ? 'is-tapped' : ''} ${m.pinned_at ? 'is-pinned' : ''}`}
+        style={{ '--idc': idn?.color ?? 'var(--text)' } as React.CSSProperties}
+        onContextMenu={p.editing ? undefined : ctx.onContextMenu(p.menu)}
+        onClick={(e) => { if (window.matchMedia('(hover: none)').matches && !(e.target as HTMLElement).closest('a,button,textarea')) p.onTap(); }}>
+        {m.reply_to_id && (
+          <button className="msg__reply" onClick={() => p.onJump(m.reply_to_id!)} title="Ir para a mensagem original">
+            {p.reply ? <><b>{replyIdn?.name ?? 'Sem autor'}</b><span>{plainText(p.reply.content) || 'anexo'}</span></> : <span>Mensagem original indisponível</span>}
+          </button>
+        )}
+        {p.draggable && !p.editing && (
+          <button ref={setActivatorNodeRef} className="msg__grip" aria-label="Arrastar para reordenar" title="Arrastar para reordenar" {...attributes} {...listeners}>
+            <IconGrip size={14} />
+          </button>
+        )}
+        {p.cont
+          ? <div className="msg__gutter" title={fmtLong.format(d)}>{fmtTime.format(d)}</div>
+          : <Avatar identity={idn} />}
+        <div className="msg__body">
+          {!p.cont && (
+            <div className="msg__head">
+              <span className="msg__author">{idn?.name ?? 'Sem autor'}</span>
+              <time className="msg__time" dateTime={m.display_at} title={fmtLong.format(d)}>{fmtFull.format(d)}</time>
+              {m.pinned_at && <span className="msg__pin" title="Fixada"><IconPin size={11} /> fixada</span>}
+            </div>
+          )}
+          {p.editing ? (
+            <div className="msg__edit">
+              <MarkdownEditor compact autoFocus value={p.editing.text} onChange={p.onEditChange} onSubmit={p.onEditSave} onCancel={p.onEditCancel} />
+              <div className="msg__edit-hint">
+                Esc <button className="link-btn" onClick={p.onEditCancel}>cancelar</button> · Enter <button className="link-btn" onClick={p.onEditSave} disabled={p.editing.saving}>{p.editing.saving ? 'salvando…' : 'salvar'}</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {m.content && <div className="md" dangerouslySetInnerHTML={{ __html: withEdited(renderMarkdown(m.content), m.edited_at) }} />}
+              {m.extra?.embeds?.map((e, i) => (
+                <div key={i} className="embed" style={{ '--ec': e.color ? `#${e.color.toString(16).padStart(6, '0')}` : undefined } as React.CSSProperties}>
+                  {e.author && <small className="muted">{e.author}</small>}
+                  {e.title && (e.url ? <a href={e.url} target="_blank" rel="noreferrer nofollow"><b>{e.title}</b></a> : <b>{e.title}</b>)}
+                  {e.description && <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.description) }} />}
+                  {e.footer && <small className="muted">{e.footer}</small>}
+                </div>
+              ))}
+              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} />)}</div>}
+            </>
+          )}
+        </div>
+        {!p.editing && (
+          <div className="msg__actions" role="toolbar" aria-label="Ações da mensagem">
+            <button className="icon-btn icon-btn--sm" title="Responder" aria-label="Responder" onClick={p.onReply}><IconReply size={15} /></button>
+            <button className="icon-btn icon-btn--sm" title="Editar" aria-label="Editar mensagem" onClick={p.onEditStart}><IconEdit size={15} /></button>
+            <button className="icon-btn icon-btn--sm" title="Mais ações" aria-label="Mais ações" onClick={ctx.fromButton(p.menu)}><IconMore size={15} /></button>
+          </div>
+        )}
+      </article>
+    </div>
+  );
+});
+
+// ─────────────────────────────────────────────────────────────
+export function MessageList(props: Props) {
+  const { channel, identities, activeIdentityId } = props;
   const [messages, setMessages] = useState<Message[]>([]);
   const [pending, setPending] = useState<Pending[]>([]);
   const [atts, setAtts] = useState<Map<string, Attachment[]>>(new Map());
@@ -92,22 +202,38 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string; saving: boolean } | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [authorFor, setAuthorFor] = useState<Message | null>(null);
   const [dateFor, setDateFor] = useState<Message | null>(null);
+  const [moveFor, setMoveFor] = useState<Message | null>(null);
+  const [pinsOpen, setPinsOpen] = useState(false);
   const [tapped, setTapped] = useState<string | null>(null);
+  const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const anchor = useRef<{ height: number; top: number } | null>(null);
   const stick = useRef(true);
-  const ctx = useContextMenu();
+  const pendingJump = useRef<string | null>(null);
   const confirm = useConfirm();
   const toast = useToast();
   const idList = useMemo(() => [...identities.values()], [identities]);
+  const manual = channel.sort_mode === 'manual';
+
+  useEffect(() => { setHeaderSlot(document.getElementById('chan-actions')); }, []);
+
+  const modeRef = useRef(channel.sort_mode);
+  modeRef.current = channel.sort_mode;
 
   const merge = useCallback((page: MessagePage, older: boolean) => {
-    setMessages((m) => sortMessages(older ? [...page.messages, ...m] : page.messages, channel.sort_mode));
+    setMessages((m) => {
+      const map = new Map((older ? [...page.messages, ...m] : page.messages).map((x) => [x.id, x]));
+      return sortMessages([...map.values()], modeRef.current);
+    });
     setAtts((prev) => {
       const next = new Map(older ? prev : []);
-      for (const a of page.attachments) next.set(a.message_id, [...(next.get(a.message_id) ?? []), a]);
+      for (const a of page.attachments) {
+        const list = next.get(a.message_id) ?? [];
+        if (!list.some((x) => x.id === a.id)) next.set(a.message_id, [...list, a]);
+      }
       return next;
     });
     setReplies((prev) => {
@@ -116,23 +242,44 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
       return next;
     });
     setHasMore(page.has_more);
-  }, [channel.sort_mode]);
+  }, []);
 
-  const load = useCallback(async (offset: number) => {
+  const load = useCallback(async (offset: number, around?: string) => {
     setLoading(true);
     setError(null);
     try {
       if (offset && scroller.current) anchor.current = { height: scroller.current.scrollHeight, top: scroller.current.scrollTop };
-      else stick.current = true;
-      merge(await api<MessagePage>(`/api/channels/${channel.id}/messages?offset=${offset}&limit=100`), offset > 0);
+      else if (!around) stick.current = true;
+      const q = around ? `around=${around}` : `offset=${offset}&limit=100`;
+      merge(await api<MessagePage>(`/api/channels/${channel.id}/messages?${q}`), offset > 0);
     } catch (e) {
       setError((e as Error).message);
+      if (around) toast.error((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }, [channel.id, merge]);
+  }, [channel.id, merge, toast]);
 
-  useEffect(() => { void load(0); }, [load]);
+  // Carrega uma vez por canal (a troca de modo de ordenação apenas reordena o que já está na tela)
+  useEffect(() => {
+    if (props.jumpTo) { pendingJump.current = props.jumpTo; stick.current = false; void load(0, props.jumpTo); props.onJumped(); }
+    else void load(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel.id]);
+
+  // Link interno aberto com o canal já carregado (o primeiro carregamento já trata o salto)
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    if (!props.jumpTo) return;
+    const id = props.jumpTo;
+    props.onJumped();
+    void jumpTo(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.jumpTo]);
+
+  // Trocar o modo de ordenação reordena o que já está carregado
+  useEffect(() => { setMessages((m) => sortMessages(m, channel.sort_mode)); }, [channel.sort_mode]);
 
   // Sincronização simples entre dispositivos: recarrega ao voltar para a aba
   useEffect(() => {
@@ -145,10 +292,14 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
     return () => document.removeEventListener('visibilitychange', vis);
   }, [channel.id, editing, messages.length, merge]);
 
-  // Rolagem: fica no fim enquanto o usuário estiver no fim; preserva posição ao carregar anteriores
+  // Rolagem: fim do canal, posição preservada ao carregar anteriores, ou salto para uma mensagem
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
+    if (pendingJump.current) {
+      const target = document.getElementById(`msg-${pendingJump.current}`);
+      if (target) { flash(target); pendingJump.current = null; return; }
+    }
     if (anchor.current) {
       el.scrollTop = el.scrollHeight - anchor.current.height + anchor.current.top;
       anchor.current = null;
@@ -160,13 +311,38 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
   const byId = useMemo(() => new Map(messages.map((m) => [m.id, m])), [messages]);
   const replace = (m: Message) => setMessages((list) => sortMessages(list.map((x) => (x.id === m.id ? m : x)), channel.sort_mode));
 
+  function flash(el: HTMLElement) {
+    el.scrollIntoView({ block: 'center' });
+    const art = el.matches('.msg') ? el : el.querySelector('.msg') ?? el;
+    art.classList.remove('is-flash');
+    void (art as HTMLElement).offsetWidth;
+    art.classList.add('is-flash');
+  }
+
+  async function jumpTo(id: string) {
+    const el = document.getElementById(`msg-${id}`);
+    if (el) { stick.current = false; flash(el); return; }
+    // Fora do que está carregado: busca no servidor (pode estar em outro canal)
+    try {
+      const [m] = await api<Message[]>(`/api/messages/${id}/locate`);
+      if (m && m.channel_id !== channel.id) { props.onOpenChannel(m.channel_id, id); return; }
+    } catch { /* segue tentando neste canal */ }
+    pendingJump.current = id;
+    stick.current = false;
+    await load(0, id);
+  }
+
   // ── Envio ────────────────────────────────────────────
   async function deliver(p: Pending) {
     setPending((list) => list.map((x) => (x.tmp === p.tmp ? { ...x, status: 'sending', error: undefined } : x)));
     try {
-      const m = await api<Message>(`/api/channels/${channel.id}/messages`, { method: 'POST', body: { content: p.content, identity_id: p.identity_id } });
+      const m = await api<Message>(`/api/channels/${channel.id}/messages`, { method: 'POST', body: { content: p.content, identity_id: p.identity_id, reply_to_id: p.reply_to_id } });
       setPending((list) => list.filter((x) => x.tmp !== p.tmp));
       setMessages((list) => sortMessages([...list, m], channel.sort_mode));
+      if (p.reply_to_id && !replies.has(p.reply_to_id)) {
+        const src = byId.get(p.reply_to_id);
+        if (src) setReplies((r) => new Map(r).set(src.id, { id: src.id, identity_id: src.identity_id, content: src.content.slice(0, 200) }));
+      }
     } catch (e) {
       setPending((list) => list.map((x) => (x.tmp === p.tmp ? { ...x, status: 'failed', error: (e as Error).message } : x)));
     }
@@ -174,8 +350,9 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
 
   function send(content: string) {
     const identity_id = activeIdentityId ?? idList.find((i) => i.is_owner)?.id ?? null;
-    const p: Pending = { tmp: `tmp-${Date.now()}-${Math.random()}`, content, identity_id, display_at: new Date().toISOString(), status: 'sending' };
+    const p: Pending = { tmp: `tmp-${Date.now()}-${Math.random()}`, content, identity_id, reply_to_id: replyTo?.id ?? null, display_at: new Date().toISOString(), status: 'sending' };
     stick.current = true;
+    setReplyTo(null);
     setPending((list) => [...list, p]);
     void deliver(p);
   }
@@ -225,30 +402,76 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
     } catch (e) { toast.error((e as Error).message); }
   }
 
-  async function copy(m: Message) {
-    try { await navigator.clipboard.writeText(m.content); toast.success('Texto copiado.'); }
+  async function copy(text: string, ok: string) {
+    try { await navigator.clipboard.writeText(text); toast.success(ok); }
     catch { toast.error('Não foi possível copiar.'); }
   }
 
+  async function moveTo(m: Message, target: ChannelOption) {
+    try {
+      await api(`/api/messages/${m.id}/move`, { method: 'POST', body: { channel_id: target.id } });
+      setMessages((list) => list.filter((x) => x.id !== m.id));
+      toast.success(`Mensagem movida para #${target.name}.`);
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
   const menuFor = (m: Message): MenuEntry[] => [
+    { label: 'Responder', icon: <IconReply size={16} />, onSelect: () => setReplyTo(m) },
     { label: 'Editar texto', icon: <IconEdit size={16} />, onSelect: () => setEditing({ id: m.id, text: m.content, saving: false }) },
+    { label: m.pinned_at ? 'Desafixar' : 'Fixar mensagem', icon: <IconPin size={16} />, onSelect: () => patch(m, { pinned: !m.pinned_at }, m.pinned_at ? 'Mensagem desafixada.' : 'Mensagem fixada.') },
+    'separator',
     { label: 'Alterar autor', icon: <span className="ctx-glyph">@</span>, onSelect: () => setAuthorFor(m) },
     { label: 'Alterar data e hora', icon: <span className="ctx-glyph">◷</span>, onSelect: () => setDateFor(m) },
+    { label: 'Mover para outro canal…', icon: <IconMove size={16} />, onSelect: () => setMoveFor(m) },
     'separator',
     { label: 'Duplicar', icon: <span className="ctx-glyph">⧉</span>, onSelect: () => duplicate(m) },
-    { label: 'Copiar texto', icon: <span className="ctx-glyph">❐</span>, onSelect: () => copy(m), disabled: !m.content },
+    { label: 'Copiar texto', icon: <span className="ctx-glyph">❐</span>, onSelect: () => copy(m.content, 'Texto copiado.'), disabled: !m.content },
+    { label: 'Copiar link da mensagem', icon: <IconLink size={16} />, onSelect: () => copy(`${location.origin}/?c=${channel.id}&m=${m.id}`, 'Link copiado. Abra-o no ORBE para ir direto a esta mensagem.') },
     'separator',
     { label: 'Excluir mensagem', icon: <IconTrash size={16} />, danger: true, onSelect: () => remove(m) },
   ];
 
-  function jumpTo(id: string) {
-    const el = document.getElementById(`msg-${id}`);
-    if (!el) { toast.info('A mensagem original está mais acima — carregue as mensagens anteriores.'); return; }
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    el.classList.remove('is-flash');
-    void el.offsetWidth;
-    el.classList.add('is-flash');
+  // ── Arrastar e soltar (modo manual) ──────────────────
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 220, tolerance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  async function onDragEnd(e: DragEndEvent) {
+    const from = messages.findIndex((m) => m.id === e.active.id);
+    const to = e.over ? messages.findIndex((m) => m.id === e.over!.id) : -1;
+    if (from < 0 || to < 0 || from === to) return;
+    const next = [...messages];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    const after = next[to - 1] ?? null;
+    const before = next[to + 1] ?? null;
+    // Otimista: posição local entre os vizinhos
+    const pos = after && before ? (after.position + before.position) / 2 : after ? after.position + 1 : before ? before.position - 1 : 0;
+    const prevList = messages;
+    setMessages(next.map((m) => (m.id === moved.id ? { ...m, position: pos } : m)));
+    try {
+      replace(await api<Message>(`/api/messages/${moved.id}/move`, { method: 'POST', body: { after_id: after?.id ?? null, before_id: before?.id ?? null } }));
+    } catch (err) {
+      setMessages(prevList);
+      toast.error(`Não foi possível mover: ${(err as Error).message}`);
+    }
   }
+
+  // ── Barra do canal (no cabeçalho) ────────────────────
+  const headerActions = headerSlot && createPortal(
+    <>
+      <button className={`hbtn ${manual ? '' : 'is-on'}`} title={manual ? 'Ordem manual — clique para ordenar pela data exibida' : 'Ordem cronológica — clique para voltar à ordem manual'}
+        onClick={() => props.onSortModeChange(manual ? 'chronological' : 'manual').catch((e) => toast.error((e as Error).message))}>
+        <IconSort size={16} /><span>{manual ? 'Manual' : 'Por data'}</span>
+      </button>
+      <button className={`hbtn ${pinsOpen ? 'is-on' : ''}`} title="Mensagens fixadas" onClick={() => setPinsOpen((o) => !o)}>
+        <IconPin size={16} /><span>Fixadas</span>
+      </button>
+    </>,
+    headerSlot,
+  );
 
   const composer = (
     <Composer
@@ -256,8 +479,10 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
       channel={channel}
       identities={idList}
       activeIdentityId={activeIdentityId}
-      onIdentityChange={onIdentityChange}
-      onManageIdentities={onManageIdentities}
+      replyTo={replyTo ? { name: (replyTo.identity_id && identities.get(replyTo.identity_id)?.name) || 'Sem autor', text: plainText(replyTo.content) } : null}
+      onCancelReply={() => setReplyTo(null)}
+      onIdentityChange={props.onIdentityChange}
+      onManageIdentities={props.onManageIdentities}
       onSend={send}
     />
   );
@@ -268,17 +493,24 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
         <Modal title="Alterar autor" onClose={() => setAuthorFor(null)} width={380}>
           <IdentityPicker inline identities={idList} value={authorFor.identity_id}
             onPick={async (id) => { const m = authorFor; setAuthorFor(null); await patch(m, { identity_id: id }, 'Autor alterado.'); }}
-            onManage={() => { setAuthorFor(null); onManageIdentities(); }}
+            onManage={() => { setAuthorFor(null); props.onManageIdentities(); }}
             onClose={() => setAuthorFor(null)} />
         </Modal>
       )}
       {dateFor && <DateDialog message={dateFor} onClose={() => setDateFor(null)} onSave={(iso) => patch(dateFor, { display_at: iso }, 'Data alterada.')} />}
+      {moveFor && (
+        <ChannelPickerDialog channels={props.channels.filter((c) => c.id !== channel.id)} onClose={() => setMoveFor(null)}
+          onPick={(c) => { const m = moveFor; setMoveFor(null); void moveTo(m, c); }} />
+      )}
+      {pinsOpen && <PinsPanel channelId={channel.id} identities={identities} onClose={() => setPinsOpen(false)}
+        onJump={(id) => { setPinsOpen(false); void jumpTo(id); }} />}
     </>
   );
 
   if (error && !messages.length) {
     return (
       <>
+        {headerActions}
         <div className="main__body"><div className="empty">
           <IconAlert size={28} />
           <h3>Não foi possível carregar</h3>
@@ -290,11 +522,12 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
     );
   }
 
-  let prev: { identity_id: string | null; display_at: string } | null = null;
+  let prev: Message | null = null;
   const empty = !loading && !messages.length && !pending.length;
 
   return (
     <>
+      {headerActions}
       <div className="main__body" ref={scroller}
         onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
         {empty ? (
@@ -313,74 +546,28 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
                   <p>{channel.topic ?? 'Início do canal.'}</p>
                 </div>
               )}
-            {messages.map((m) => {
-              const idn = m.identity_id ? identities.get(m.identity_id) : undefined;
-              const newDay = !prev || localDay(prev.display_at) !== localDay(m.display_at);
-              const cont = !!prev && !newDay && !m.reply_to_id && prev.identity_id === m.identity_id
-                && Math.abs(new Date(m.display_at).getTime() - new Date(prev.display_at).getTime()) < GROUP_MS;
-              prev = m;
-              const reply = m.reply_to_id ? byId.get(m.reply_to_id) ?? replies.get(m.reply_to_id) : undefined;
-              const replyIdn = reply?.identity_id ? identities.get(reply.identity_id) : undefined;
-              const d = new Date(m.display_at);
-              const isEditing = editing?.id === m.id;
-              return (
-                <div key={m.id}>
-                  {newDay && <div className="day-sep">{fmtDay.format(d)}</div>}
-                  <article id={`msg-${m.id}`}
-                    className={`msg ${cont ? 'msg--cont' : ''} ${m.reply_to_id ? 'msg--reply' : ''} ${isEditing ? 'is-editing' : ''} ${tapped === m.id ? 'is-tapped' : ''}`}
-                    style={{ '--idc': idn?.color ?? 'var(--text)' } as React.CSSProperties}
-                    onContextMenu={isEditing ? undefined : ctx.onContextMenu(menuFor(m))}
-                    onClick={(e) => { if (window.matchMedia('(hover: none)').matches && !(e.target as HTMLElement).closest('a,button,textarea')) setTapped((t) => (t === m.id ? null : m.id)); }}>
-                    {m.reply_to_id && (
-                      <button className="msg__reply" onClick={() => jumpTo(m.reply_to_id!)} title="Ir para a mensagem original">
-                        {reply ? <><b>{replyIdn?.name ?? 'Desconhecido'}</b><span>{plainText(reply.content) || 'anexo'}</span></> : <span>Mensagem original indisponível</span>}
-                      </button>
-                    )}
-                    {cont
-                      ? <div className="msg__gutter" title={fmtLong.format(d)}>{fmtTime.format(d)}</div>
-                      : <Avatar identity={idn} />}
-                    <div className="msg__body">
-                      {!cont && (
-                        <div className="msg__head">
-                          <span className="msg__author">{idn?.name ?? 'Sem autor'}</span>
-                          <time className="msg__time" dateTime={m.display_at} title={fmtLong.format(d)}>{fmtFull.format(d)}</time>
-                          {m.pinned_at && <span className="msg__pin" title="Fixada">● fixada</span>}
-                        </div>
-                      )}
-                      {isEditing ? (
-                        <div className="msg__edit">
-                          <MarkdownEditor compact autoFocus value={editing.text}
-                            onChange={(text) => setEditing((e) => (e ? { ...e, text } : e))}
-                            onSubmit={saveEdit} onCancel={() => setEditing(null)} />
-                          <div className="msg__edit-hint">
-                            Esc <button className="link-btn" onClick={() => setEditing(null)}>cancelar</button> · Enter <button className="link-btn" onClick={saveEdit} disabled={editing.saving}>{editing.saving ? 'salvando…' : 'salvar'}</button>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          {m.content && <div className="md" dangerouslySetInnerHTML={{ __html: withEdited(renderMarkdown(m.content), m.edited_at) }} />}
-                          {m.extra?.embeds?.map((e, i) => (
-                            <div key={i} className="embed" style={{ '--ec': e.color ? `#${e.color.toString(16).padStart(6, '0')}` : undefined } as React.CSSProperties}>
-                              {e.author && <small className="muted">{e.author}</small>}
-                              {e.title && (e.url ? <a href={e.url} target="_blank" rel="noreferrer nofollow"><b>{e.title}</b></a> : <b>{e.title}</b>)}
-                              {e.description && <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.description) }} />}
-                              {e.footer && <small className="muted">{e.footer}</small>}
-                            </div>
-                          ))}
-                          {atts.get(m.id) && <div className="atts">{atts.get(m.id)!.map((a) => <AttachmentView key={a.id} a={a} />)}</div>}
-                        </>
-                      )}
-                    </div>
-                    {!isEditing && (
-                      <div className="msg__actions" role="toolbar" aria-label="Ações da mensagem">
-                        <button className="icon-btn icon-btn--sm" title="Editar" aria-label="Editar mensagem" onClick={() => setEditing({ id: m.id, text: m.content, saving: false })}><IconEdit size={15} /></button>
-                        <button className="icon-btn icon-btn--sm" title="Mais ações" aria-label="Mais ações" onClick={ctx.fromButton(menuFor(m))}><IconMore size={15} /></button>
-                      </div>
-                    )}
-                  </article>
-                </div>
-              );
-            })}
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+              <SortableContext items={messages.map((m) => m.id)} strategy={verticalListSortingStrategy} disabled={!manual}>
+                {messages.map((m) => {
+                  const newDay = !prev || localDay(prev.display_at) !== localDay(m.display_at);
+                  const cont = !!prev && !newDay && !m.reply_to_id && prev.identity_id === m.identity_id
+                    && Math.abs(new Date(m.display_at).getTime() - new Date(prev.display_at).getTime()) < GROUP_MS;
+                  prev = m;
+                  const isEditing = editing?.id === m.id;
+                  return (
+                    <MessageRow key={m.id} m={m} identities={identities} newDay={newDay} cont={cont}
+                      reply={m.reply_to_id ? byId.get(m.reply_to_id) ?? replies.get(m.reply_to_id) : undefined}
+                      atts={atts.get(m.id)} editing={isEditing ? editing : null} tapped={tapped === m.id}
+                      draggable={manual && !editing} menu={menuFor(m)}
+                      onTap={() => setTapped((t) => (t === m.id ? null : m.id))}
+                      onEditStart={() => setEditing({ id: m.id, text: m.content, saving: false })}
+                      onEditChange={(text) => setEditing((e) => (e ? { ...e, text } : e))}
+                      onEditSave={saveEdit} onEditCancel={() => setEditing(null)}
+                      onReply={() => setReplyTo(m)} onJump={jumpTo} />
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
             {pending.map((p) => {
               const idn = p.identity_id ? identities.get(p.identity_id) : undefined;
               return (
@@ -412,6 +599,7 @@ export function MessageList({ channel, identities, activeIdentityId, onIdentityC
   );
 }
 
+// ─────────────────────────────────────────────────────────────
 /** Altera a data/hora EXIBIDA. Os registros técnicos são apenas mostrados. */
 function DateDialog({ message, onClose, onSave }: { message: Message; onClose: () => void; onSave: (iso: string) => Promise<boolean> }) {
   const toLocal = (iso: string) => {
@@ -452,6 +640,57 @@ function DateDialog({ message, onClose, onSave }: { message: Message; onClose: (
           <dt>Criada no ORBE</dt><dd>{fmtLong.format(new Date(message.created_at))}</dd>
           <dt>Última edição do texto</dt><dd>{message.edited_at ? fmtLong.format(new Date(message.edited_at)) : 'nunca editada'}</dd>
         </dl>
+      </div>
+    </Modal>
+  );
+}
+
+/** Escolha de canal de destino (com busca). */
+function ChannelPickerDialog({ channels, onPick, onClose }: { channels: ChannelOption[]; onPick: (c: ChannelOption) => void; onClose: () => void }) {
+  const [q, setQ] = useState('');
+  const list = useMemo(() => {
+    const n = q.trim().toLowerCase();
+    return n ? channels.filter((c) => `${c.path} ${c.name}`.toLowerCase().includes(n)) : channels;
+  }, [channels, q]);
+  return (
+    <Modal title="Mover para outro canal" onClose={onClose} width={440}>
+      <div className="form" style={{ gap: 10 }}>
+        <input className="input" autoFocus placeholder="Buscar canal…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <ul className="chpick">
+          {list.map((c) => (
+            <li key={c.id}><button className="chpick__item" onClick={() => onPick(c)}><IconHash size={14} /><span>{c.name}</span><small>{c.path}</small></button></li>
+          ))}
+          {!list.length && <li className="muted small">Nenhum canal encontrado.</li>}
+        </ul>
+        <p className="muted small">A mensagem vai para o fim do canal escolhido, com autor, data, respostas e anexos.</p>
+      </div>
+    </Modal>
+  );
+}
+
+/** Painel de mensagens fixadas do canal. */
+function PinsPanel({ channelId, identities, onJump, onClose }: { channelId: string; identities: Map<string, Identity>; onJump: (id: string) => void; onClose: () => void }) {
+  const [list, setList] = useState<Message[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { api<Message[]>(`/api/channels/${channelId}/pins`).then(setList).catch((e) => setErr((e as Error).message)); }, [channelId]);
+  return (
+    <Modal title="Mensagens fixadas" onClose={onClose} width={520}>
+      {err && <p className="form-error">{err}</p>}
+      {!list && !err && <p className="muted">Carregando…</p>}
+      {list && !list.length && <p className="muted">Nenhuma mensagem fixada neste canal. Use “Fixar mensagem” no menu de uma mensagem.</p>}
+      <div className="pins">
+        {list?.map((m) => {
+          const idn = m.identity_id ? identities.get(m.identity_id) : undefined;
+          return (
+            <button key={m.id} className="pin" onClick={() => onJump(m.id)}>
+              <Avatar identity={idn} size={28} />
+              <span className="pin__body">
+                <span className="pin__head"><b style={{ color: idn?.color ?? undefined }}>{idn?.name ?? 'Sem autor'}</b><small>{fmtFull.format(new Date(m.display_at))}</small></span>
+                <span className="pin__text">{plainText(m.content).slice(0, 220) || 'anexo'}</span>
+              </span>
+            </button>
+          );
+        })}
       </div>
     </Modal>
   );

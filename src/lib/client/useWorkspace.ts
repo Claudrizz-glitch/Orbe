@@ -10,6 +10,7 @@ export interface SpaceInput { name: string; icon: string | null; color: string |
 export interface CategoryInput { name: string; icon: string | null; color: string | null }
 export interface ChannelInput {
   name: string; icon: string | null; color: string | null; topic: string | null; category_id: string | null;
+  sort_mode?: 'manual' | 'chronological';
 }
 
 const byPos = <T extends { position: number }>(a: T, b: T) => a.position - b.position;
@@ -157,8 +158,29 @@ export function useWorkspace(initial: Workspace) {
     }
   }, [track]);
 
+  /** Move um canal para outra categoria (ou para fora delas) na posição indicada por `ids`. */
+  const moveChannel = useCallback(async (channelId: string, categoryId: string | null, ids: string[]) => {
+    const before = wsRef.current;
+    const pos = new Map(ids.map((id, i) => [id, i]));
+    setWs((w) => ({
+      ...w,
+      channels: w.channels.map((c) => {
+        const p = pos.get(c.id);
+        if (c.id === channelId) return { ...c, category_id: categoryId, position: p ?? c.position };
+        return p !== undefined ? { ...c, position: p } : c;
+      }),
+    }));
+    try {
+      await track(api('/api/reorder', { method: 'POST', body: { table: 'channels', ids, category_id: categoryId, move_id: channelId } }));
+    } catch (e) {
+      setWs(before);
+      throw e;
+    }
+  }, [track]);
+
   return {
     ws,
+    moveChannel,
     sync,
     lastError,
     refresh,
