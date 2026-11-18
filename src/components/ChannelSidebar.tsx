@@ -24,6 +24,8 @@ interface Props {
   onCreateChannel: (categoryId: string | null) => void;
   onCreateCategory: () => void;
   spaceMenu: MenuEntry[];
+  /** Menu do botão + (criar canal, página, categoria) */
+  addMenu: MenuEntry[];
   categoryMenu: (c: Category) => MenuEntry[];
   channelMenu: (c: Channel) => MenuEntry[];
   onLogout: () => void;
@@ -207,6 +209,7 @@ export function ChannelSidebar(p: Props) {
         onContextMenu={ctx.onContextMenu(p.spaceMenu)}>
         <span className="sidebar__dot" />
         <h1 className="sidebar__title">{p.space.name}</h1>
+        <button className="icon-btn sidebar__add" onClick={ctx.fromButton(p.addMenu)} aria-label="Criar canal, página ou categoria" title="Criar canal, página HTML ou categoria"><IconPlus size={17} /></button>
         <button className="icon-btn" onClick={ctx.fromButton(p.spaceMenu)} aria-label="Opções do espaço"><IconMore /></button>
       </header>
 
@@ -219,7 +222,7 @@ export function ChannelSidebar(p: Props) {
           </div>
         )}
 
-        <DndContext sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}
+        <DndContext id="orbe-sidebar" sensors={sensors} collisionDetection={collision} onDragStart={onDragStart} onDragOver={onDragOver} onDragEnd={onDragEnd}
           onDragCancel={() => { setDragging(null); setOverCat(null); }}>
           <SortableContext items={loose} strategy={verticalListSortingStrategy}>
             {(loose.length > 0 || draggingChannel) && (

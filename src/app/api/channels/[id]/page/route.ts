@@ -4,6 +4,7 @@ import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { MAX_ATTACHMENT, MAX_CHUNK } from '@/lib/server/files';
 import { CHANNEL_COLS, type Channel } from '@/lib/types';
+import { COLORS, audit, describeChannel } from '@/lib/server/audit';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,8 +19,23 @@ async function getChannel(id: string) {
 
 /** Define o novo documento da página e apaga o anterior. */
 async function setPage(ch: Channel, path: string) {
-  const [row] = await store().update<Channel>('channels', { eq: { id: ch.id } }, { kind: 'page', page_path: path }, CHANNEL_COLS);
-  if (ch.page_path && ch.page_path !== path) await store().removeFile(ch.page_path).catch(() => {});
+  const s = store();
+  const [row] = await s.update<Channel>('channels', { eq: { id: ch.id } }, { kind: 'page', page_path: path }, CHANNEL_COLS);
+  if (ch.page_path && ch.page_path !== path) {
+    // Versão anterior da página fica guardada no #log (recuperável)
+    const entry = await audit({
+      title: 'Página HTML substituída', color: COLORS.edit, author: 'ORBE',
+      fields: [{ label: 'Canal', value: await describeChannel(ch.id) }, { label: 'Versão anterior', value: 'arquivo anexo a este registro' }],
+      footer: `ID do canal: ${ch.id}`,
+      ref: { event: 'page.replace', channel_id: ch.id, old_path: ch.page_path },
+    });
+    const size = await s.fileSize(ch.page_path);
+    if (entry && size !== null) {
+      await s.insert('attachments', [{ message_id: entry, storage_path: ch.page_path, file_name: `${ch.name}-versao-anterior.html`, mime_type: 'text/html', size_bytes: size }], { ignoreDuplicatesOn: 'storage_path' });
+    } else {
+      await s.removeFile(ch.page_path).catch(() => {});
+    }
+  }
   return row;
 }
 

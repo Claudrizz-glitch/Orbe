@@ -83,6 +83,24 @@ export function IdentitiesDialog({ onClose, onChanged }: Props) {
     if (ok) await run(async () => { await api(`/api/identities/${cur.id}`, { method: 'DELETE' }); setSel(null); await reload(); }, 'Identidade excluída.');
   }
 
+  async function toLog() {
+    if (!cur) return;
+    const ok = await confirm({
+      title: `Levar as mensagens de “${cur.name}” ao LOG?`, confirmLabel: 'Levar ao LOG',
+      message: <>
+        <p>As {cur.message_count} mensagens saem das conversas de origem e vão para <b>LOG › #log</b> como registros soltos (sem autor), com a conversa de origem anotada em cada um.</p>
+        <p>O perfil “{cur.name}” será excluído.</p>
+      </>,
+    });
+    if (!ok) return;
+    await run(async () => {
+      const r = await api<{ moved: number }>('/api/log/collect', { method: 'POST', body: { identity_ids: [cur.id] } });
+      toast.success(`${r.moved} mensagens levadas ao LOG.`);
+      setSel(null);
+      await reload();
+    });
+  }
+
   async function merge() {
     if (!cur || !mergeInto) return;
     const target = list?.find((i) => i.id === mergeInto);
@@ -146,7 +164,13 @@ export function IdentitiesDialog({ onClose, onChanged }: Props) {
                     <button className="btn" onClick={merge} disabled={!mergeInto || busy}>Mesclar</button>
                   </div>
                 </div>
-                <button className="btn btn--danger btn--sm" style={{ alignSelf: 'flex-start' }} onClick={remove} disabled={busy}>Excluir identidade</button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button className="btn btn--sm" onClick={toLog} disabled={busy || !cur.message_count}
+                    title="Para bots de registro (como a Loritta): as mensagens viram registros soltos no #log, com a origem anotada">
+                    📜 Levar mensagens ao LOG e excluir perfil
+                  </button>
+                  <button className="btn btn--danger btn--sm" onClick={remove} disabled={busy}>Excluir identidade</button>
+                </div>
               </div>
             )}
           </div>

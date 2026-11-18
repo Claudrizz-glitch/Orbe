@@ -84,7 +84,7 @@ export interface Message {
   edited_at: string | null;
   pinned_at: string | null;
   position: number;
-  extra: { embeds?: Embed[]; stickers?: string[]; discord?: { author?: string } };
+  extra: { embeds?: Embed[]; stickers?: string[]; discord?: { author?: string }; /** registro solto (LOG): sem autor nem avatar */ system?: boolean; origin?: string };
   /** criação real (técnica, imutável) */
   created_at: string;
   /** última alteração técnica */

@@ -19,8 +19,9 @@ const COLS: Record<Table, string[]> = {
   import_map: ['source', 'kind', 'external_id', 'local_id', 'created_at'],
   access_sessions: ['id', 'token_hash', 'user_agent', 'created_at', 'last_seen_at', 'expires_at'],
   login_attempts: ['id', 'ip_hash', 'success', 'attempted_at'],
+  settings: ['key', 'value', 'updated_at'],
 };
-const JSONB = new Set(['appearance', 'extra', 'options', 'state', 'stats', 'log']);
+const JSONB = new Set(['appearance', 'extra', 'options', 'state', 'stats', 'log', 'value']);
 const UUID_COL = (c: string) => c === 'id' || c === 'local_id' || (c.endsWith('_id') && c !== 'external_id');
 
 type Sql = ReturnType<typeof postgres>;
@@ -59,7 +60,9 @@ function colList(t: Table, spec?: string) {
   return spec.split(',').map((c) => col(t, c.trim())).join(', ');
 }
 function val(c: string, v: unknown, params: unknown[]) {
-  if (JSONB.has(c)) { params.push(JSON.stringify(v ?? {})); return `$${params.length}::jsonb`; }
+  // "::text" antes de "::jsonb": sem isso o driver vê um parâmetro jsonb e codifica
+  // a string JSON de novo, gravando um texto em vez de um objeto.
+  if (JSONB.has(c)) { params.push(JSON.stringify(v ?? {})); return `$${params.length}::text::jsonb`; }
   params.push(v);
   return `$${params.length}`;
 }

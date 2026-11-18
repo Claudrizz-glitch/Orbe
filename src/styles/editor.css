@@ -371,3 +371,13 @@ a.hbtn { text-decoration: none; }
   .fv__frame { border-radius: 0; }
   .fv__bar .btn { display: none; }
 }
+
+.sidebar__add { color: var(--text-muted); }
+.sidebar__add:hover { color: var(--success); background: color-mix(in srgb, var(--success) 10%, transparent); }
+
+/* Registros soltos do #log (sem autor) */
+.msg--log { padding-top: 4px; padding-bottom: 4px; }
+.msg__gutter--log { color: var(--text-faint) !important; padding-top: 10px; font-size: .64rem; }
+.msg--log .embed { margin-top: 0; max-width: 720px; }
+.msg--log .embed small.muted { display: block; }
+.msg--log .md pre { max-height: 360px; overflow: auto; }

@@ -165,6 +165,7 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
   const ctx = useContextMenu();
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id: m.id, disabled: !p.draggable });
   const idn = m.identity_id ? p.identities.get(m.identity_id) : undefined;
+  const system = !!m.extra?.system;
   const replyIdn = p.reply?.identity_id ? p.identities.get(p.reply.identity_id) : undefined;
   const d = new Date(m.display_at);
   const style = { transform: CSS.Translate.toString(transform), transition };
@@ -173,7 +174,7 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
     <div ref={setNodeRef} style={style} className={isDragging ? 'is-dragging' : undefined}>
       {p.newDay && <div className="day-sep">{fmtDay.format(d)}</div>}
       <article id={`msg-${m.id}`}
-        className={`msg ${p.cont ? 'msg--cont' : ''} ${m.reply_to_id ? 'msg--reply' : ''} ${p.editing ? 'is-editing' : ''} ${p.tapped ? 'is-tapped' : ''} ${m.pinned_at ? 'is-pinned' : ''} ${p.selecting ? 'is-selecting' : ''} ${p.selected ? 'is-selected' : ''}`}
+        className={`msg ${p.cont || system ? 'msg--cont' : ''} ${system ? 'msg--log' : ''} ${m.reply_to_id ? 'msg--reply' : ''} ${p.editing ? 'is-editing' : ''} ${p.tapped ? 'is-tapped' : ''} ${m.pinned_at ? 'is-pinned' : ''} ${p.selecting ? 'is-selecting' : ''} ${p.selected ? 'is-selected' : ''}`}
         style={{ '--idc': idn?.color ?? 'var(--text)' } as React.CSSProperties}
         aria-selected={p.selecting ? p.selected : undefined}
         onContextMenu={p.editing || p.selecting ? undefined : ctx.onContextMenu(p.menu)}
@@ -196,11 +197,14 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
             <IconGrip size={14} />
           </button>
         )}
-        {p.cont
-          ? <div className="msg__gutter" title={fmtLong.format(d)}>{fmtTime.format(d)}</div>
-          : <Avatar identity={idn} />}
+        {system
+          // Registro solto (LOG): sem avatar nem nome — só o horário ao lado do cartão
+          ? <div className="msg__gutter msg__gutter--log" title={fmtLong.format(d)}>{fmtTime.format(d)}</div>
+          : p.cont
+            ? <div className="msg__gutter" title={fmtLong.format(d)}>{fmtTime.format(d)}</div>
+            : <Avatar identity={idn} />}
         <div className="msg__body">
-          {!p.cont && (
+          {!p.cont && !system && (
             <div className="msg__head">
               <span className="msg__author">{idn?.name ?? 'Sem autor'}</span>
               <button type="button" className="msg__time msg__time--btn" onClick={p.onDateEdit} title={`${fmtLong.format(d)} — clique para alterar a data e hora`}>
@@ -487,8 +491,7 @@ export function MessageList(props: Props) {
       title: 'Excluir mensagem?', danger: true, confirmLabel: 'Excluir',
       message: <>
         <div className="confirm-quote md" dangerouslySetInnerHTML={{ __html: renderMarkdown(m.content.slice(0, 600) || '*[apenas anexos]*') }} />
-        {(atts.get(m.id)?.length ?? 0) > 0 && <p>Os {atts.get(m.id)!.length} anexo(s) também serão apagados.</p>}
-        <p className="muted">Esta ação não pode ser desfeita.</p>
+        <p className="muted">Uma cópia{(atts.get(m.id)?.length ?? 0) > 0 ? ` (com ${atts.get(m.id)!.length} anexo(s))` : ''} fica em <b>LOG › #log</b> para recuperação.</p>
       </>,
     });
     if (!ok) return;
@@ -512,7 +515,7 @@ export function MessageList(props: Props) {
   async function removeAttachment(a: Attachment) {
     const ok = await confirm({
       title: 'Remover anexo?', danger: true, confirmLabel: 'Remover',
-      message: <><p>“{a.file_name}” ({humanSize(a.size_bytes)}) será apagado.</p><p className="muted">Esta ação não pode ser desfeita.</p></>,
+      message: <><p>“{a.file_name}” ({humanSize(a.size_bytes)}) sai desta mensagem.</p><p className="muted">O arquivo fica guardado em <b>LOG › #log</b> para recuperação.</p></>,
     });
     if (!ok) return;
     try {
@@ -776,7 +779,7 @@ export function MessageList(props: Props) {
                   <p>{channel.topic ?? 'Início do canal.'}</p>
                 </div>
               )}
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+            <DndContext id="orbe-messages" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
               <SortableContext items={messages.map((m) => m.id)} strategy={verticalListSortingStrategy} disabled={!manual}>
                 {messages.map((m) => {
                   const newDay = !prev || localDay(prev.display_at) !== localDay(m.display_at);

@@ -68,7 +68,7 @@ export function SpaceRail({ spaces, activeId, importJob, onSelect, onCreate, onI
     <nav className="rail" aria-label="Espaços">
       <div className="rail__brand" title="ORBE"><IconOrbit size={20} /></div>
       <div className="rail__sep" />
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+      <DndContext id="orbe-rail" sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
         <SortableContext items={spaces.map((s) => s.id)} strategy={verticalListSortingStrategy}>
           <ul className="rail__list">
             {spaces.map((s) => (

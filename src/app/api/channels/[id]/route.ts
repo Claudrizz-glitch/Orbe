@@ -3,6 +3,7 @@ import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { nextPosition } from '@/lib/server/workspace';
 import { CHANNEL_COLS } from '@/lib/types';
+import { archiveChannels, isLogChannel } from '@/lib/server/audit';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -51,9 +52,15 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
   return json(row);
 });
 
-/** Exclui o canal e, em cascata, suas mensagens. */
+/**
+ * Exclui o canal. Antes, a transcrição completa e os anexos vão para o #log
+ * (recuperáveis). O próprio #log não pode ser excluído.
+ */
 export const DELETE = protectedRoute<Ctx>(async (_req, { params }) => {
   const id = v.uuid((await params).id);
-  if (!(await store().remove('channels', { eq: { id } }))) throw new ApiError(404, 'Canal não encontrado.');
+  if (!(await store().count('channels', { eq: { id } }))) throw new ApiError(404, 'Canal não encontrado.');
+  if (await isLogChannel(id)) throw new ApiError(400, 'O #log guarda o histórico de alterações e não pode ser excluído. Exclua entradas individuais, se quiser.');
+  await archiveChannels([id], 'Canal excluído');
+  await store().remove('channels', { eq: { id } });
   return json({ ok: true });
 });

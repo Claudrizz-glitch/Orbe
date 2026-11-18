@@ -67,7 +67,7 @@ export function EntityDialog({ title, submitLabel, kind, initial, categories, on
       <form id="entity-form" className="form" onSubmit={submit}>
         <div className="preview-row">
           <span className={`preview-badge preview-badge--${kind}`} style={{ '--c': v.color ?? 'var(--accent)' } as React.CSSProperties}>
-            {v.icon ?? (kind === 'channel' ? '#' : v.name.trim().slice(0, 2).toUpperCase() || '?')}
+            {v.icon ?? (kind === 'channel' ? (v.channel_kind === 'page' ? '📄' : '#') : v.name.trim().slice(0, 2).toUpperCase() || '?')}
           </span>
           <label className="field field--grow">
             <span>Nome</span>
@@ -87,7 +87,7 @@ export function EntityDialog({ title, submitLabel, kind, initial, categories, on
                 <b>📄 Página HTML</b><small>Exibe um documento HTML</small>
               </button>
             </div>
-            {initial?.channel_kind && v.channel_kind !== initial.channel_kind && (
+            {initial?.name && initial?.channel_kind && v.channel_kind !== initial.channel_kind && (
               <small className="muted">{v.channel_kind === 'page' ? 'As mensagens do canal ficam guardadas e voltam se ele virar conversa de novo.' : 'O HTML da página fica guardado e volta se ele virar página de novo.'}</small>
             )}
           </div>

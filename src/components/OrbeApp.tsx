@@ -14,12 +14,12 @@ import { EntityDialog, type EntityValues } from './EntityDialog';
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
 import type { MenuEntry } from './ui/ContextMenu';
-import { IconDown, IconEdit, IconExport, IconFolder, IconHash, IconTrash, IconUp } from './ui/Icons';
+import { IconDown, IconEdit, IconExport, IconFolder, IconHash, IconPage, IconTrash, IconUp } from './ui/Icons';
 
 type Dialog =
   | { kind: 'space'; space?: Space }
   | { kind: 'category'; spaceId: string; category?: Category }
-  | { kind: 'channel'; spaceId: string; categoryId: string | null; channel?: Channel }
+  | { kind: 'channel'; spaceId: string; categoryId: string | null; channel?: Channel; newKind?: 'chat' | 'page' }
   | null;
 
 // Preferências de navegação deste dispositivo (conveniência; não são dados do usuário)
@@ -219,7 +219,8 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
     return [
       { label: 'Editar espaço', icon: <IconEdit size={16} />, onSelect: () => setDialog({ kind: 'space', space: s }) },
       { label: 'Nova categoria', icon: <IconFolder size={16} />, onSelect: () => setDialog({ kind: 'category', spaceId: s.id }) },
-      { label: 'Novo canal', icon: <IconHash size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: s.id, categoryId: null }) },
+      { label: 'Novo canal de conversa', icon: <IconHash size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: s.id, categoryId: null }) },
+      { label: 'Nova página HTML', icon: <IconPage size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: s.id, categoryId: null, newKind: 'page' }) },
       'separator',
       { label: 'Mover para cima', icon: <IconUp size={16} />, ...move('spaces', ids, s.id, -1) },
       { label: 'Mover para baixo', icon: <IconDown size={16} />, ...move('spaces', ids, s.id, 1) },
@@ -234,6 +235,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
     return [
       { label: 'Editar categoria', icon: <IconEdit size={16} />, onSelect: () => setDialog({ kind: 'category', spaceId: c.space_id, category: c }) },
       { label: 'Novo canal aqui', icon: <IconHash size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: c.space_id, categoryId: c.id }) },
+      { label: 'Nova página HTML aqui', icon: <IconPage size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: c.space_id, categoryId: c.id, newKind: 'page' }) },
       'separator',
       { label: 'Mover para cima', icon: <IconUp size={16} />, ...move('categories', ids, c.id, -1) },
       { label: 'Mover para baixo', icon: <IconDown size={16} />, ...move('categories', ids, c.id, 1) },
@@ -265,8 +267,8 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       danger: true,
       confirmLabel: 'Excluir espaço',
       message: <>
-        <p>Isto excluirá permanentemente o espaço, {plural(nCat, 'categoria', 'categorias')} e {plural(nCh, 'canal', 'canais')}, incluindo todas as mensagens desses canais.</p>
-        <p className="muted">Esta ação não pode ser desfeita.</p>
+        <p>O espaço, {plural(nCat, 'categoria', 'categorias')} e {plural(nCh, 'canal', 'canais')} serão excluídos.</p>
+        <p className="muted">Uma transcrição completa e todos os anexos ficam guardados em <b>LOG › #log</b>, para recuperação.</p>
       </>,
     });
     if (ok) run(() => w.deleteSpace(s.id), 'Espaço excluído.');
@@ -283,7 +285,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         : <p>Ela contém {plural(nCh, 'canal', 'canais')}. O que fazer com eles?</p>,
       choices: nCh === 0 ? undefined : [
         { value: 'keep', label: 'Manter os canais', hint: 'Eles ficam no espaço, sem categoria.' },
-        { value: 'delete', label: 'Excluir os canais também', hint: 'Inclui todas as mensagens. Não pode ser desfeito.' },
+        { value: 'delete', label: 'Excluir os canais também', hint: 'Transcrição e anexos ficam guardados no #log.' },
       ],
     });
     if (choice) run(() => w.deleteCategory(c.id, choice === 'delete' ? 'delete' : 'keep'), 'Categoria excluída.');
@@ -295,8 +297,8 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       danger: true,
       confirmLabel: 'Excluir canal',
       message: <>
-        <p>O canal e todas as suas mensagens serão excluídos permanentemente.</p>
-        <p className="muted">Esta ação não pode ser desfeita.</p>
+        <p>O canal e suas mensagens serão excluídos.</p>
+        <p className="muted">Uma transcrição completa e todos os anexos ficam guardados em <b>LOG › #log</b>, para recuperação.</p>
       </>,
     });
     if (ok) run(() => w.deleteChannel(c.id), 'Canal excluído.');
@@ -353,6 +355,11 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
             onCreateChannel={(categoryId) => setDialog({ kind: 'channel', spaceId: space.id, categoryId })}
             onCreateCategory={() => setDialog({ kind: 'category', spaceId: space.id })}
             spaceMenu={spaceMenu(space)}
+            addMenu={[
+              { label: 'Novo canal de conversa', icon: <IconHash size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: space.id, categoryId: null }) },
+              { label: 'Nova página HTML', icon: <IconPage size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: space.id, categoryId: null, newKind: 'page' }) },
+              { label: 'Nova categoria', icon: <IconFolder size={16} />, onSelect: () => setDialog({ kind: 'category', spaceId: space.id }) },
+            ]}
             categoryMenu={categoryMenu}
             channelMenu={channelMenu}
             onLogout={logout}
@@ -426,13 +433,13 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
           title={
             dialog.kind === 'space' ? (dialog.space ? 'Editar espaço' : 'Criar espaço')
               : dialog.kind === 'category' ? (dialog.category ? 'Editar categoria' : 'Criar categoria')
-                : dialog.channel ? 'Editar canal' : 'Criar canal'
+                : dialog.channel ? 'Editar canal' : dialog.newKind === 'page' ? 'Criar página HTML' : 'Criar canal'
           }
           submitLabel={(dialog.kind === 'space' && dialog.space) || (dialog.kind === 'category' && dialog.category) || (dialog.kind === 'channel' && dialog.channel) ? 'Salvar' : 'Criar'}
           initial={
             dialog.kind === 'space' ? dialog.space
               : dialog.kind === 'category' ? dialog.category
-                : dialog.channel ? { ...dialog.channel, channel_kind: dialog.channel.kind ?? 'chat' } : { category_id: dialog.categoryId }
+                : dialog.channel ? { ...dialog.channel, channel_kind: dialog.channel.kind ?? 'chat' } : { category_id: dialog.categoryId, channel_kind: dialog.newKind ?? 'chat' }
           }
           categories={dialog.kind === 'channel' ? w.categoriesOf(dialog.spaceId) : undefined}
           onSubmit={submitDialog}

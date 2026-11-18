@@ -3,6 +3,7 @@ import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { nextPosition } from '@/lib/server/workspace';
 import { CATEGORY_COLS } from '@/lib/types';
+import { archiveChannels, isLogChannel } from '@/lib/server/audit';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -35,6 +36,10 @@ export const DELETE = protectedRoute<Ctx>(async (req, { params }) => {
   if (!cat) throw new ApiError(404, 'Categoria não encontrada.');
 
   if (mode === 'delete') {
+    const kids = await s.select<{ id: string }>('channels', { cols: 'id', eq: { category_id: id }, order: [{ col: 'position' }] });
+    for (const k of kids) if (await isLogChannel(k.id)) throw new ApiError(400, 'Esta categoria contém o #log, que não pode ser excluído.');
+    const [c] = await s.select<{ name: string }>('categories', { cols: 'name', eq: { id } });
+    await archiveChannels(kids.map((k) => k.id), 'Categoria excluída (com os canais)', [{ label: 'Categoria', value: c?.name ?? '' }]);
     await s.remove('channels', { eq: { category_id: id } });
   } else {
     // Canais preservados vão para o fim da lista de canais sem categoria

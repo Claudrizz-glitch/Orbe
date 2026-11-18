@@ -2,6 +2,7 @@ import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
 import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { MESSAGE_COLS, type Message } from '@/lib/types';
+import { COLORS, audit, block, describeChannel, identityName, isLogChannel, when } from '@/lib/server/audit';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -18,7 +19,7 @@ export const POST = protectedRoute<Ctx>(async (req, { params }) => {
   const b = await readBody(req);
   const s = store();
 
-  const [msg] = await s.select<Message>('messages', { cols: 'id, channel_id, position', eq: { id } });
+  const [msg] = await s.select<Message>('messages', { cols: 'id, channel_id, position, identity_id, content, display_at', eq: { id } });
   if (!msg) throw new ApiError(404, 'Mensagem não encontrada.');
   const channel_id = b.channel_id == null ? msg.channel_id : v.uuid(b.channel_id, 'Canal');
   if (channel_id !== msg.channel_id && !(await s.count('channels', { eq: { id: channel_id } }))) throw new ApiError(404, 'Canal de destino não encontrado.');
@@ -42,7 +43,22 @@ export const POST = protectedRoute<Ctx>(async (req, { params }) => {
     position = last ? Number(last.position) + 1 : 0;
   }
 
+  const fromWhere = channel_id !== msg.channel_id ? await describeChannel(msg.channel_id) : null;
   await s.update('messages', { eq: { id } }, { channel_id, position }, 'id');
+  if (fromWhere && !(await isLogChannel(msg.channel_id))) {
+    const author = await identityName(msg.identity_id);
+    await audit({
+      title: 'Mensagem movida para outro canal', color: COLORS.move, author,
+      fields: [
+        { label: 'De', value: fromWhere },
+        { label: 'Para', value: await describeChannel(channel_id) },
+        { label: 'Mensagem', value: `
+${block(msg.content.slice(0, 1500))}` },
+      ],
+      footer: `ID da mensagem: ${id} · Data exibida: ${when(msg.display_at)}`,
+      ref: { event: 'message.move', message_id: id, from: msg.channel_id, to: channel_id },
+    });
+  }
 
   // Divisões sucessivas esgotam a precisão: renumera o canal quando os vizinhos ficam colados demais
   if (a !== null && z !== null && Math.abs(z - a) < 1e-6) {

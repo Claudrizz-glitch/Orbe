@@ -16,7 +16,7 @@ const ROOT = path.resolve(process.cwd(), process.env.ORBE_LOCAL_DIR || 'orbe-dat
 const DB_DIR = path.join(ROOT, 'db');
 const FILES_DIR = path.join(ROOT, 'files');
 
-const TABLES: Table[] = ['spaces', 'categories', 'channels', 'identities', 'messages', 'attachments', 'import_jobs', 'import_map', 'access_sessions', 'login_attempts'];
+const TABLES: Table[] = ['spaces', 'categories', 'channels', 'identities', 'messages', 'attachments', 'import_jobs', 'import_map', 'access_sessions', 'login_attempts', 'settings'];
 
 type Data = Record<Table, Row[]>;
 interface State { data: Data; dirty: Set<Table>; timer: NodeJS.Timeout | null; writing: Promise<void> }
@@ -79,6 +79,7 @@ function defaults(t: Table, r: Row): Row {
     case 'import_map': Object.assign(base, { created_at: ts }); break;
     case 'access_sessions': Object.assign(base, { id: randomUUID(), user_agent: null, created_at: ts, last_seen_at: ts }); break;
     case 'login_attempts': Object.assign(base, { id: Date.now() + Math.random(), attempted_at: ts }); break;
+    case 'settings': Object.assign(base, { value: {}, updated_at: ts }); break;
   }
   return { ...base, ...r };
 }

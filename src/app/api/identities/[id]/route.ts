@@ -2,6 +2,7 @@ import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
 import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
 import { IDENTITY_COLS, type Identity } from '@/lib/types';
+import { COLORS, audit, identityName } from '@/lib/server/audit';
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -41,7 +42,19 @@ export const DELETE = protectedRoute<Ctx>(async (req, { params }) => {
     // Reimportações do Discord passam a usar a identidade mesclada
     await s.update('import_map', { eq: { kind: 'identity', local_id: id } }, { local_id: to }, 'external_id');
   }
+  const count = await s.count('messages', { eq: { identity_id: id } });
+  const targetName = target ? await identityName(target) : null;
   await s.remove('identities', { eq: { id } });
   if (idn.avatar_path) await s.removeFile(idn.avatar_path).catch(() => {});
+  await audit({
+    title: target ? 'Identidade mesclada' : 'Identidade excluída', color: COLORS.info, author: idn.name,
+    fields: [
+      { label: 'Identidade', value: idn.name },
+      target ? { label: 'Mensagens passaram para', value: targetName ?? '' } : { label: 'Mensagens', value: `${count} mensagens ficaram sem autor (o texto foi mantido)` },
+      ...(idn.description ? [{ label: 'Descrição', value: idn.description }] : []),
+    ],
+    footer: `ID da identidade: ${id}`,
+    ref: { event: target ? 'identity.merge' : 'identity.delete', identity_id: id, into: target },
+  });
   return json({ ok: true });
 });
