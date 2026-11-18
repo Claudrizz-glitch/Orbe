@@ -131,6 +131,17 @@ create table if not exists settings (
   updated_at  timestamptz not null default now()
 );
 
+-- Dados salvos pelas páginas HTML (o "localStorage" delas) e o histórico de
+-- alterações: cada linha é um retrato completo; a mais recente é o estado atual.
+create table if not exists page_history (
+  id          uuid primary key default gen_random_uuid(),
+  channel_id  uuid not null references channels(id) on delete cascade,
+  at          timestamptz not null default now(),
+  items       jsonb not null default '{}'::jsonb,
+  changes     jsonb not null default '[]'::jsonb
+);
+create index if not exists page_history_channel_at on page_history (channel_id, at desc);
+
 -- ── Acesso ───────────────────────────────────────────────────────────
 create table if not exists access_sessions (
   id            uuid primary key default gen_random_uuid(),

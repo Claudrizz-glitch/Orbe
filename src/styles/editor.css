@@ -381,3 +381,11 @@ a.hbtn { text-decoration: none; }
 .msg--log .embed { margin-top: 0; max-width: 720px; }
 .msg--log .embed small.muted { display: block; }
 .msg--log .md pre { max-height: 360px; overflow: auto; }
+
+/* ── Histórico dos dados de páginas HTML ───────────────────────── */
+.page__saved { color: var(--text-3, #8b8aa0); font-size: 12px; }
+.phist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; max-height: 62vh; overflow-y: auto; }
+.phist__item { padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.03); box-shadow: 0 0 0 1px rgba(255,255,255,.06); }
+.phist__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.phist__now { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent, #a99cff); }
+.phist ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--text-2, #c9c8d6); }

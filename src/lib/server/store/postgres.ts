@@ -20,8 +20,9 @@ const COLS: Record<Table, string[]> = {
   access_sessions: ['id', 'token_hash', 'user_agent', 'created_at', 'last_seen_at', 'expires_at'],
   login_attempts: ['id', 'ip_hash', 'success', 'attempted_at'],
   settings: ['key', 'value', 'updated_at'],
+  page_history: ['id', 'channel_id', 'at', 'items', 'changes'],
 };
-const JSONB = new Set(['appearance', 'extra', 'options', 'state', 'stats', 'log', 'value']);
+const JSONB = new Set(['appearance', 'extra', 'options', 'state', 'stats', 'log', 'value', 'items', 'changes']);
 const UUID_COL = (c: string) => c === 'id' || c === 'local_id' || (c.endsWith('_id') && c !== 'external_id');
 
 type Sql = ReturnType<typeof postgres>;

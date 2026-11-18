@@ -1,6 +1,6 @@
 export type Table =
   | 'spaces' | 'categories' | 'channels' | 'identities' | 'messages' | 'attachments'
-  | 'import_jobs' | 'import_map' | 'access_sessions' | 'login_attempts' | 'settings';
+  | 'import_jobs' | 'import_map' | 'access_sessions' | 'login_attempts' | 'settings' | 'page_history';
 
 export type Row = Record<string, unknown>;
 export type StorageKind = 'local' | 'postgres' | 'supabase';

@@ -7,7 +7,9 @@ import { uploadPage } from '@/lib/client/upload';
 import { Modal } from './ui/Modal';
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
-import { IconDownload, IconEdit, IconExternal, IconPaperclip } from './ui/Icons';
+import { IconClock, IconDownload, IconEdit, IconExternal, IconPaperclip } from './ui/Icons';
+import { api } from '@/lib/client/api';
+import { PageHistory } from './PageHistory';
 import { SANDBOX, fileHref } from './FileViewer';
 
 interface Props {
@@ -52,7 +54,37 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
   const file = useRef<HTMLInputElement>(null);
   const toast = useToast();
   const confirm = useConfirm();
-  const src = channel.page_path ? `${fileHref(channel.page_path)}?view=1` : null;
+  // Servida pelo ORBE com um localStorage próprio: o que a página salva fica guardado aqui
+  const src = channel.page_path ? `/api/channels/${channel.id}/page/view?v=${encodeURIComponent(channel.page_path)}` : null;
+  const frame = useRef<HTMLIFrameElement>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Recebe os dados que a página grava e salva no ORBE (com histórico)
+  useEffect(() => {
+    let pending: Record<string, string> | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let inflight = Promise.resolve();
+    const flush = () => {
+      timer = null;
+      const items = pending; pending = null;
+      if (!items) return;
+      setSaveState('saving');
+      inflight = inflight.then(() => api(`/api/channels/${channel.id}/page/state`, { method: 'PUT', body: { items } })
+        .then(() => setSaveState('saved'))
+        .catch(() => { setSaveState('error'); toast.error('A página não conseguiu salvar no ORBE. Tente de novo.'); }));
+    };
+    const onMsg = (e: MessageEvent) => {
+      if (!frame.current || e.source !== frame.current.contentWindow) return;
+      const d = e.data as { orbe?: string; items?: unknown };
+      if (d?.orbe !== 'storage' || !d.items || typeof d.items !== 'object') return;
+      pending = d.items as Record<string, string>;
+      if (!timer) timer = setTimeout(flush, 400);
+    };
+    window.addEventListener('message', onMsg);
+    return () => { window.removeEventListener('message', onMsg); if (timer) { clearTimeout(timer); flush(); } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channel.id]);
 
   useEffect(() => { setSlot(document.getElementById('chan-actions')); }, []);
 
@@ -95,6 +127,8 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
   const actions = slot && createPortal(
     <>
       {busy && <span className="hbtn"><span className="spinner" /><span>{busy}</span></span>}
+      {src && saveState !== 'idle' && <span className="hbtn page__saved" title="Os dados desta página ficam salvos no ORBE">{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Não salvo' : 'Salvo no ORBE'}</span>}
+      {src && <button className="hbtn" onClick={() => setShowHistory(true)} title="Histórico dos dados salvos pela página"><IconClock size={16} /><span>Histórico</span></button>}
       <button className="hbtn" onClick={openEditor} title="Editar o código HTML desta página"><IconEdit size={16} /><span>Editar HTML</span></button>
       <button className="hbtn" onClick={() => file.current?.click()} title="Trocar por um arquivo .html do seu computador"><IconPaperclip size={16} /><span>Substituir arquivo</span></button>
       {src && <a className="hbtn" href={src} target="_blank" rel="noreferrer" title="Abrir em nova aba"><IconExternal size={16} /></a>}
@@ -109,7 +143,7 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
       <input ref={file} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
       {src ? (
         <div className="page">
-          <iframe key={frameKey} className="page__frame" src={src} sandbox={SANDBOX} title={channel.name} />
+          <iframe ref={frame} key={frameKey} className="page__frame" src={src} sandbox={SANDBOX} title={channel.name} />
         </div>
       ) : (
         <div className="main__body">
@@ -125,6 +159,8 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
           </div>
         </div>
       )}
+
+      {showHistory && <PageHistory channelId={channel.id} onClose={() => setShowHistory(false)} onRestored={() => setFrameKey((k) => k + 1)} />}
 
       {editing !== null && (
         <Modal title={`Editar HTML · #${channel.name}`} onClose={() => { if (!busy) setEditing(null); }} width={980}
