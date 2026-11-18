@@ -42,5 +42,5 @@ export interface Store {
   /** Tamanho em bytes, ou null se não existe. */
   fileSize(path: string): Promise<number | null>;
   /** Resposta HTTP que entrega o arquivo (stream local ou redirecionamento assinado). */
-  fileResponse(path: string, opts?: { download?: string }): Promise<Response>;
+  fileResponse(path: string, opts?: { download?: string; view?: boolean }): Promise<Response>;
 }

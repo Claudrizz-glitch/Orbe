@@ -11,6 +11,7 @@ export interface CategoryInput { name: string; icon: string | null; color: strin
 export interface ChannelInput {
   name: string; icon: string | null; color: string | null; topic: string | null; category_id: string | null;
   sort_mode?: 'manual' | 'chronological';
+  kind?: 'chat' | 'page';
 }
 
 const byPos = <T extends { position: number }>(a: T, b: T) => a.position - b.position;
@@ -178,9 +179,15 @@ export function useWorkspace(initial: Workspace) {
     }
   }, [track]);
 
+  /** Substitui um canal no estado local (ex.: depois de salvar a página). */
+  const upsertChannel = useCallback((c: Channel) => {
+    setWs((w) => ({ ...w, channels: w.channels.some((x) => x.id === c.id) ? w.channels.map((x) => (x.id === c.id ? c : x)) : [...w.channels, c] }));
+  }, []);
+
   return {
     ws,
     moveChannel,
+    upsertChannel,
     sync,
     lastError,
     refresh,

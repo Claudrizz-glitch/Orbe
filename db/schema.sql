@@ -203,3 +203,12 @@ end $$;
 -- ── Perfil principal ─────────────────────────────────────────────────
 insert into identities (name, is_owner, position)
 select 'Eu', true, 0 where not exists (select 1 from identities where is_owner);
+
+-- ── Canais do tipo página (HTML) — adicionado depois; seguro reaplicar ──
+alter table channels add column if not exists kind text not null default 'chat';
+alter table channels add column if not exists page_path text;
+do $$ begin
+  if not exists (select 1 from pg_constraint where conname = 'channels_kind_check') then
+    alter table channels add constraint channels_kind_check check (kind in ('chat', 'page'));
+  end if;
+end $$;

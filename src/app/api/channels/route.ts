@@ -19,6 +19,7 @@ export const POST = protectedRoute(async (req) => {
     icon: v.optIcon(b.icon) ?? null,
     color: v.optColor(b.color) ?? null,
     topic: v.optText(b.topic, 1000, 'Descrição') ?? null,
+    kind: b.kind === 'page' ? 'page' : 'chat',
     position: await nextPosition('channels', { space_id, category_id }),
   }], { cols: CHANNEL_COLS });
   return json(row, 201);

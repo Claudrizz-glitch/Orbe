@@ -1,7 +1,7 @@
 'use client';
 
 import { RequestError } from './api';
-import type { Attachment } from '../types';
+import type { Attachment, Channel } from '../types';
 
 export const MAX_FILE = 25 * 1024 * 1024;
 const CHUNK = 3 * 1024 * 1024; // abaixo do limite de ~4,5 MB por requisição da Vercel
@@ -55,6 +55,30 @@ export async function uploadAttachment(messageId: string, file: File, onProgress
   }
   if (!result) throw new RequestError(500, `O servidor não confirmou “${file.name}”.`);
   return result;
+}
+
+/** Envia o HTML de um canal-página (texto editado ou arquivo), em partes. */
+export async function uploadPage(channelId: string, html: Blob, onProgress?: (p: number) => void): Promise<Channel> {
+  if (html.size > MAX_FILE) throw new RequestError(413, 'A página passa de 25 MB.');
+  if (!html.size) throw new RequestError(400, 'A página está vazia.');
+  const upload = crypto.randomUUID();
+  const parts = Math.max(1, Math.ceil(html.size / CHUNK));
+  let channel: Channel | null = null;
+  for (let part = 0; part < parts; part++) {
+    const q = new URLSearchParams({ upload, size: String(html.size), part: String(part), parts: String(parts) });
+    const res = await fetch(`/api/channels/${channelId}/page?${q}`, {
+      method: 'POST', body: html.slice(part * CHUNK, Math.min(html.size, (part + 1) * CHUNK)),
+      headers: { 'Content-Type': 'application/octet-stream' }, credentials: 'same-origin',
+    }).catch(() => null);
+    if (!res) throw new RequestError(0, 'Sem conexão durante o envio da página.');
+    if (res.status === 401) { window.location.href = '/login'; throw new RequestError(401, 'Sessão expirada.'); }
+    const data = await res.json().catch(() => null) as { error?: string; channel?: Channel } | null;
+    if (!res.ok) throw new RequestError(res.status, data?.error ?? 'Falha ao salvar a página.');
+    if (data?.channel) channel = data.channel;
+    onProgress?.((part + 1) / parts);
+  }
+  if (!channel) throw new RequestError(500, 'O servidor não confirmou a página.');
+  return channel;
 }
 
 export function humanSize(n: number) {

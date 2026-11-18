@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { promises as fs, readFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import type { Filter, Query, Row, Store, Table } from './types';
+import { fileHeaders } from '../files';
 
 /**
  * Armazenamento local em disco — pasta orbe-data/ na raiz do projeto.
@@ -70,7 +71,7 @@ function defaults(t: Table, r: Row): Row {
   switch (t) {
     case 'spaces': Object.assign(base, { id: randomUUID(), icon: null, icon_path: null, color: null, appearance: {}, position: 0, created_at: ts, updated_at: ts }); break;
     case 'categories': Object.assign(base, { id: randomUUID(), icon: null, color: null, collapsed: false, position: 0, created_at: ts, updated_at: ts }); break;
-    case 'channels': Object.assign(base, { id: randomUUID(), category_id: null, icon: null, color: null, topic: null, sort_mode: 'manual', position: 0, created_at: ts, updated_at: ts }); break;
+    case 'channels': Object.assign(base, { id: randomUUID(), category_id: null, icon: null, color: null, topic: null, sort_mode: 'manual', kind: 'chat', page_path: null, position: 0, created_at: ts, updated_at: ts }); break;
     case 'identities': Object.assign(base, { id: randomUUID(), avatar_path: null, description: null, color: null, is_owner: false, position: 0, created_at: ts, updated_at: ts }); break;
     case 'messages': Object.assign(base, { id: randomUUID(), identity_id: null, reply_to_id: null, content: '', content_format: 'markdown', display_at: ts, position: 0, pinned_at: null, edited_at: null, source_ref: null, extra: {}, created_at: ts, updated_at: ts }); break;
     case 'attachments': Object.assign(base, { id: randomUUID(), mime_type: 'application/octet-stream', size_bytes: 0, width: null, height: null, position: 0, created_at: ts }); break;
@@ -255,15 +256,7 @@ export const localStore: Store = {
     try { buf = await fs.readFile(safeFilePath(p)); }
     catch { return new Response(JSON.stringify({ error: 'Arquivo não encontrado.' }), { status: 404 }); }
     const ext = p.split('.').pop()?.toLowerCase() ?? '';
-    const headers: Record<string, string> = {
-      'Content-Type': MIME[ext] ?? 'application/octet-stream',
-      'Cache-Control': 'private, max-age=3600',
-      'X-Content-Type-Options': 'nosniff',
-    };
-    // SVG e HTML nunca são exibidos inline (evita execução de scripts embutidos)
-    if (opts.download || ext === 'svg' || ext === 'html' || ext === 'htm') {
-      headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(opts.download ?? path.basename(p))}`;
-    }
+    const headers = fileHeaders(p, MIME[ext] ?? 'application/octet-stream', buf.byteLength, opts);
     return new Response(new Uint8Array(buf), { headers });
   },
 };

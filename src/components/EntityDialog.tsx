@@ -11,6 +11,7 @@ export interface EntityValues {
   color: string | null;
   topic: string | null;
   category_id: string | null;
+  channel_kind: 'chat' | 'page';
 }
 
 interface Props {
@@ -32,6 +33,7 @@ export function EntityDialog({ title, submitLabel, kind, initial, categories, on
     color: initial?.color ?? null,
     topic: initial?.topic ?? null,
     category_id: initial?.category_id ?? null,
+    channel_kind: initial?.channel_kind ?? 'chat',
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,6 +75,23 @@ export function EntityDialog({ title, submitLabel, kind, initial, categories, on
               onChange={(e) => set('name', e.target.value)} autoFocus />
           </label>
         </div>
+
+        {kind === 'channel' && (
+          <div className="field">
+            <span>Tipo</span>
+            <div className="seg" role="radiogroup" aria-label="Tipo de canal">
+              <button type="button" role="radio" aria-checked={v.channel_kind === 'chat'} className={v.channel_kind === 'chat' ? 'is-on' : ''} onClick={() => set('channel_kind', 'chat')}>
+                <b># Conversa</b><small>Mensagens, identidades, anexos</small>
+              </button>
+              <button type="button" role="radio" aria-checked={v.channel_kind === 'page'} className={v.channel_kind === 'page' ? 'is-on' : ''} onClick={() => set('channel_kind', 'page')}>
+                <b>📄 Página HTML</b><small>Exibe um documento HTML</small>
+              </button>
+            </div>
+            {initial?.channel_kind && v.channel_kind !== initial.channel_kind && (
+              <small className="muted">{v.channel_kind === 'page' ? 'As mensagens do canal ficam guardadas e voltam se ele virar conversa de novo.' : 'O HTML da página fica guardado e volta se ele virar página de novo.'}</small>
+            )}
+          </div>
+        )}
 
         {kind === 'channel' && categories && (
           <label className="field">

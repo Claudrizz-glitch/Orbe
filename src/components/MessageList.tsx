@@ -12,6 +12,7 @@ import { plainText, renderMarkdown } from '@/lib/markdown';
 import type { Attachment, Channel, Identity, Message, MessagePage, ReplyPreview, SortMode } from '@/lib/types';
 import { IconAlert, IconCheckSquare, IconClock, IconDownload, IconEdit, IconExternal, IconGrip, IconHash, IconLink, IconMore, IconMove, IconPaperclip, IconPin, IconRefresh, IconReply, IconSort, IconTrash } from './ui/Icons';
 import { Lightbox } from './Lightbox';
+import { FileViewer, viewKind } from './FileViewer';
 import { humanSize, uploadAttachment } from '@/lib/client/upload';
 import { downloadBlob, makeZip, uniqueName } from '@/lib/client/zip';
 import type { ExportRequest } from './ExportDialog';
@@ -37,6 +38,8 @@ interface Props {
   onSortModeChange: (mode: SortMode) => Promise<void>;
   onOpenChannel: (channelId: string, messageId?: string) => void;
   onExport: (req: ExportRequest) => void;
+  /** Cria um canal-página a partir de um anexo HTML */
+  onMakePage: (a: Attachment) => void;
 }
 
 /** Mensagem local ainda não confirmada pelo servidor */
@@ -73,7 +76,7 @@ export function Avatar({ identity, size }: { identity: Identity | undefined; siz
 
 export const isImage = (a: Attachment) => a.mime_type.startsWith('image/') && !a.mime_type.includes('svg');
 
-function AttachmentView({ a, onOpen, onRemove }: { a: Attachment; onOpen?: () => void; onRemove?: () => void }) {
+function AttachmentView({ a, onOpen, onRemove, onView }: { a: Attachment; onOpen?: () => void; onRemove?: () => void; onView?: () => void }) {
   const url = fileUrl(a.storage_path);
   const dl = `${url}?download=${encodeURIComponent(a.file_name)}`;
   const remove = onRemove && (
@@ -95,13 +98,16 @@ function AttachmentView({ a, onOpen, onRemove }: { a: Attachment; onOpen?: () =>
   if (a.mime_type.startsWith('video/')) return <div className="att-wrap"><video className="att-img" src={url} controls preload="metadata" />{remove}</div>;
   if (a.mime_type.startsWith('audio/')) return <div className="att-wrap att-wrap--audio"><audio src={url} controls preload="none" />{remove}</div>;
   const ext = a.file_name.includes('.') ? a.file_name.split('.').pop()!.slice(0, 4) : 'arq';
-  const viewable = a.mime_type === 'application/pdf' || a.mime_type.startsWith('text/');
+  const kind = viewKind(a);
+  const isPage = kind === 'html';
   return (
     <div className="att-wrap">
-      <div className="att-file">
-        <span className="att-file__ext">{ext}</span>
-        <span className="att-file__info">{a.file_name}<small>{humanSize(a.size_bytes)}</small></span>
-        {viewable && <a className="icon-btn icon-btn--sm" href={url} target="_blank" rel="noreferrer" title="Visualizar"><IconExternal size={14} /></a>}
+      <div className={`att-file ${isPage ? 'att-file--page' : ''}`}>
+        <button type="button" className="att-file__open" onClick={onView} disabled={!onView || !kind}
+          title={kind ? (isPage ? 'Abrir página dentro do ORBE' : 'Abrir dentro do ORBE') : 'Sem pré-visualização — use o download'}>
+          <span className="att-file__ext">{isPage ? 'html' : ext}</span>
+          <span className="att-file__info">{a.file_name}<small>{humanSize(a.size_bytes)}{kind ? ` · ${isPage ? 'abrir página' : 'abrir'}` : ''}</small></span>
+        </button>
         <a className="icon-btn icon-btn--sm" href={dl} title="Baixar" aria-label={`Baixar ${a.file_name}`}><IconDownload size={15} /></a>
       </div>
       {remove}
@@ -145,6 +151,7 @@ interface RowProps {
   onJump: (id: string) => void;
   onDateEdit: () => void;
   onOpenImage: (a: Attachment) => void;
+  onViewFile: (a: Attachment) => void;
   onRemoveAttachment: (a: Attachment) => void;
   onAddFiles: (files: File[]) => void;
   uploading: string | null;
@@ -230,7 +237,7 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
                   {e.footer && <small className="muted">{e.footer}</small>}
                 </div>
               ))}
-              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} onOpen={p.selecting ? undefined : () => p.onOpenImage(a)} />)}</div>}
+              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} onOpen={p.selecting ? undefined : () => p.onOpenImage(a)} onView={p.selecting ? undefined : () => p.onViewFile(a)} />)}</div>}
             </>
           )}
         </div>
@@ -264,6 +271,7 @@ export function MessageList(props: Props) {
   const [moveFor, setMoveFor] = useState<Message | null>(null);
   const [pinsOpen, setPinsOpen] = useState(false);
   const [viewer, setViewer] = useState<{ images: Attachment[]; start: number } | null>(null);
+  const [viewFile, setViewFile] = useState<Attachment | null>(null);
   const [zipping, setZipping] = useState<string | null>(null);
   const [uploadingTo, setUploadingTo] = useState<{ id: string; name: string } | null>(null);
   // Seleção para exportar
@@ -722,6 +730,8 @@ export function MessageList(props: Props) {
       )}
       {pinsOpen && <PinsPanel channelId={channel.id} identities={identities} onClose={() => setPinsOpen(false)}
         onJump={(id) => { setPinsOpen(false); void jumpTo(id); }} />}
+      {viewFile && <FileViewer attachment={viewFile} onClose={() => setViewFile(null)}
+        onMakePage={(a) => { setViewFile(null); props.onMakePage(a); }} />}
       {viewer && <Lightbox images={viewer.images} start={viewer.start} onClose={() => setViewer(null)}
         caption={(a) => { const m = byId.get(a.message_id); const idn = m?.identity_id ? identities.get(m.identity_id) : undefined; return m ? `${idn?.name ?? 'Sem autor'}, ${fmtFull.format(new Date(m.display_at))}` : undefined; }} />}
     </>
@@ -785,7 +795,7 @@ export function MessageList(props: Props) {
                       onEditChange={(text) => setEditing((e) => (e ? { ...e, text } : e))}
                       onEditSave={saveEdit} onEditCancel={() => setEditing(null)}
                       onReply={() => setReplyTo(m)} onJump={jumpTo} onDateEdit={() => setDateFor(m)}
-                      onOpenImage={openImage} onRemoveAttachment={removeAttachment}
+                      onOpenImage={openImage} onViewFile={setViewFile} onRemoveAttachment={removeAttachment}
                       onAddFiles={(files) => void addFilesTo(m.id, files)}
                       uploading={uploadingTo?.id === m.id ? uploadingTo.name : null} />
                   );

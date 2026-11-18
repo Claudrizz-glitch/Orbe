@@ -10,7 +10,7 @@ import { CSS } from '@dnd-kit/utilities';
 import type { Category, Channel, Space } from '@/lib/types';
 import type { SyncState } from '@/lib/client/useWorkspace';
 import { useContextMenu, type MenuEntry } from './ui/ContextMenu';
-import { IconAlert, IconCheck, IconChevron, IconCloudOff, IconFolder, IconHash, IconLogout, IconMore, IconPlus, IconRefresh, IconUsers } from './ui/Icons';
+import { IconAlert, IconCheck, IconChevron, IconCloudOff, IconFolder, IconHash, IconLogout, IconMore, IconPage, IconPlus, IconRefresh, IconUsers } from './ui/Icons';
 
 interface Props {
   space: Space;
@@ -46,7 +46,7 @@ function ChannelRow({ c, active, menu, onSelect, sortable = true }: { c: Channel
       <div className={`chan ${active ? 'is-active' : ''}`} style={{ '--c': c.color ?? 'currentColor' } as React.CSSProperties}
         onContextMenu={ctx.onContextMenu(menu)}>
         <button className="chan__main" onClick={onSelect} aria-current={active ? 'page' : undefined} {...s.attributes} {...s.listeners}>
-          <span className="chan__icon">{c.icon ?? <IconHash size={16} />}</span>
+          <span className="chan__icon">{c.icon ?? (c.kind === 'page' ? <IconPage size={16} /> : <IconHash size={16} />)}</span>
           <span className="chan__name">{c.name}</span>
         </button>
         <button className="icon-btn icon-btn--sm chan__more" onClick={ctx.fromButton(menu)} aria-label={`Opções de ${c.name}`}>

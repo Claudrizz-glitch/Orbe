@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { Category, Channel, ImportJob, Space, Workspace } from '@/lib/types';
+import type { Attachment, Category, Channel, ImportJob, Space, Workspace } from '@/lib/types';
 import { DiscordImportDialog } from './DiscordImportDialog';
 import { IdentitiesDialog } from './IdentitiesDialog';
 import { ExportDialog, type ExportRequest } from './ExportDialog';
@@ -161,6 +161,20 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
     if (spaceId) writeLS(LS_LAST, { ...readLS<Record<string, string>>(LS_LAST, {}), [spaceId]: id });
   }
 
+  /** Cria um canal-página a partir de um anexo HTML, no mesmo lugar do canal atual. */
+  async function makePageFrom(a: Attachment) {
+    const here = channel;
+    if (!here) return;
+    const name = a.file_name.replace(/.html?$/i, '').replace(/[_]+/g, ' ').trim().slice(0, 100) || 'página';
+    try {
+      const ch = await w.createChannel(here.space_id, { name, icon: null, color: null, topic: `Página criada de “${a.file_name}”`, category_id: here.category_id, kind: 'page' });
+      const updated = await api<Channel>(`/api/channels/${ch.id}/page`, { method: 'POST', body: { from_attachment: a.id } });
+      w.upsertChannel(updated);
+      selectChannel(updated.id);
+      toast.success(`Página #${updated.name} criada.`);
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
   /** Abre um canal (de qualquer espaço) e, opcionalmente, vai até uma mensagem. */
   function openChannel(id: string, messageId?: string) {
     const ch = w.ws.channels.find((c) => c.id === id);
@@ -299,7 +313,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       if (dialog.category) { await w.updateCategory(dialog.category.id, base); toast.success('Categoria atualizada.'); }
       else { await w.createCategory(dialog.spaceId, base); toast.success('Categoria criada.'); }
     } else {
-      const input = { ...base, topic: v.topic, category_id: v.category_id };
+      const input = { ...base, topic: v.topic, category_id: v.category_id, kind: v.channel_kind };
       if (dialog.channel) { await w.updateChannel(dialog.channel.id, input); toast.success('Canal atualizado.'); }
       else { const c = await w.createChannel(dialog.spaceId, input); selectChannel(c.id); toast.success('Canal criado.'); }
     }
@@ -373,6 +387,9 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         onSortModeChange={async (mode) => { if (channel) { await w.updateChannel(channel.id, { sort_mode: mode }); toast.success(mode === 'manual' ? 'Ordem manual: arraste as mensagens para reorganizar.' : 'Mensagens ordenadas pela data exibida.'); } }}
         onOpenChannel={openChannel}
         onExport={setExportReq}
+        onMakePage={(a) => void makePageFrom(a)}
+        onChannelUpdated={w.upsertChannel}
+        onConvertToChat={() => { if (channel) void run(() => w.updateChannel(channel.id, { kind: 'chat' }), 'Canal voltou a ser conversa.'); }}
         onImport={() => setImportOpen(true)}
         onToggleSidebar={toggleNav}
         onOpenDrawer={() => setDrawer(true)}
@@ -415,7 +432,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
           initial={
             dialog.kind === 'space' ? dialog.space
               : dialog.kind === 'category' ? dialog.category
-                : dialog.channel ?? { category_id: dialog.categoryId }
+                : dialog.channel ? { ...dialog.channel, channel_kind: dialog.channel.kind ?? 'chat' } : { category_id: dialog.categoryId }
           }
           categories={dialog.kind === 'channel' ? w.categoriesOf(dialog.spaceId) : undefined}
           onSubmit={submitDialog}

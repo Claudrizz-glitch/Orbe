@@ -28,6 +28,7 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
     }
   }
 
+  if (b.kind !== undefined && b.kind !== 'chat' && b.kind !== 'page') throw new ApiError(400, 'Tipo de canal inválido.');
   if (b.sort_mode !== undefined && b.sort_mode !== 'manual' && b.sort_mode !== 'chronological') {
     throw new ApiError(400, 'Modo de ordenação inválido.');
   }
@@ -38,6 +39,7 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
     color: v.optColor(b.color),
     topic: v.optText(b.topic, 1000, 'Descrição'),
     sort_mode: b.sort_mode as string | undefined,
+    kind: b.kind as string | undefined,
     category_id,
     position,
   });

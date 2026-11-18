@@ -21,7 +21,7 @@ const COLS = {
   identities: ['id', 'name', 'avatar_path', 'description', 'color', 'is_owner', 'position', 'created_at', 'updated_at'],
   spaces: ['id', 'name', 'icon', 'icon_path', 'color', 'appearance', 'position', 'created_at', 'updated_at'],
   categories: ['id', 'space_id', 'name', 'icon', 'color', 'collapsed', 'position', 'created_at', 'updated_at'],
-  channels: ['id', 'space_id', 'category_id', 'name', 'icon', 'color', 'topic', 'sort_mode', 'position', 'created_at', 'updated_at'],
+  channels: ['id', 'space_id', 'category_id', 'name', 'icon', 'color', 'topic', 'sort_mode', 'position', 'kind', 'page_path', 'created_at', 'updated_at'],
   messages: ['id', 'channel_id', 'identity_id', 'content', 'content_format', 'display_at', 'position', 'pinned_at', 'edited_at', 'source_ref', 'extra', 'created_at', 'updated_at'],
   attachments: ['id', 'message_id', 'storage_path', 'file_name', 'mime_type', 'size_bytes', 'width', 'height', 'position', 'created_at'],
   import_map: ['source', 'kind', 'external_id', 'local_id', 'created_at'],
@@ -53,7 +53,9 @@ try {
   await copy('identities', identities.filter((i) => !(dbOwner && i.is_owner)));
   await copy('spaces', read('spaces'));
   await copy('categories', read('categories'));
-  await copy('channels', read('channels'));
+  // canais antigos (sem tipo) viram conversa
+  const fixKind = (rows) => rows.map((c) => ({ kind: 'chat', page_path: null, ...c }));
+  await copy('channels', fixKind(read('channels')));
   const messages = read('messages').map((m) => ({ ...m, identity_id: m.identity_id ? ownerMap(m.identity_id) : null }));
   await copy('messages', messages);
   // Respostas depois que todas as mensagens existem

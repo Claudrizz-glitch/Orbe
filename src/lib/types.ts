@@ -36,7 +36,12 @@ export interface Channel {
   topic: string | null;
   sort_mode: SortMode;
   position: number;
+  /** 'chat' = conversa; 'page' = exibe um documento HTML */
+  kind: ChannelKind;
+  page_path: string | null;
 }
+
+export type ChannelKind = 'chat' | 'page';
 
 export interface Identity {
   id: string;
@@ -139,6 +144,6 @@ export interface ExportData {
 
 export const SPACE_COLS = 'id, name, icon, icon_path, color, appearance, position';
 export const CATEGORY_COLS = 'id, space_id, name, icon, color, collapsed, position';
-export const CHANNEL_COLS = 'id, space_id, category_id, name, icon, color, topic, sort_mode, position';
+export const CHANNEL_COLS = 'id, space_id, category_id, name, icon, color, topic, sort_mode, position, kind, page_path';
 export const IDENTITY_COLS = 'id, name, avatar_path, description, color, is_owner, position';
 export const MESSAGE_COLS = 'id, channel_id, identity_id, reply_to_id, content, display_at, edited_at, pinned_at, position, extra, created_at, updated_at';

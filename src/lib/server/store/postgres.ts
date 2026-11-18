@@ -1,6 +1,7 @@
 import 'server-only';
 import postgres from 'postgres';
 import type { Filter, Query, Row, Store, Table } from './types';
+import { fileHeaders } from '../files';
 
 /**
  * Armazenamento em Postgres (Neon). Conexão pela DATABASE_URL, apenas no servidor.
@@ -10,7 +11,7 @@ import type { Filter, Query, Row, Store, Table } from './types';
 const COLS: Record<Table, string[]> = {
   spaces: ['id', 'name', 'icon', 'icon_path', 'color', 'appearance', 'position', 'created_at', 'updated_at'],
   categories: ['id', 'space_id', 'name', 'icon', 'color', 'collapsed', 'position', 'created_at', 'updated_at'],
-  channels: ['id', 'space_id', 'category_id', 'name', 'icon', 'color', 'topic', 'sort_mode', 'position', 'created_at', 'updated_at'],
+  channels: ['id', 'space_id', 'category_id', 'name', 'icon', 'color', 'topic', 'sort_mode', 'position', 'kind', 'page_path', 'created_at', 'updated_at'],
   identities: ['id', 'name', 'avatar_path', 'description', 'color', 'is_owner', 'position', 'created_at', 'updated_at'],
   messages: ['id', 'channel_id', 'identity_id', 'reply_to_id', 'content', 'content_format', 'display_at', 'position', 'pinned_at', 'edited_at', 'source_ref', 'extra', 'created_at', 'updated_at'],
   attachments: ['id', 'message_id', 'storage_path', 'file_name', 'mime_type', 'size_bytes', 'width', 'height', 'position', 'created_at'],
@@ -78,7 +79,6 @@ function where(t: Table, f: Filter = {}, params: unknown[]): string {
 }
 const hasFilter = (f: Filter) => Object.values(f).some((x) => x && Object.keys(x).length);
 
-const MIME: Record<string, string> = { svg: 'image/svg+xml', html: 'text/html', htm: 'text/html' };
 
 export const postgresStore: Store = {
   kind: 'postgres',
@@ -182,18 +182,7 @@ export const postgresStore: Store = {
     const [f] = await sql().unsafe('select content_type, octet_length(data)::int as n from files where path = $1', [path] as never[]);
     if (!f) return new Response(JSON.stringify({ error: 'Arquivo não encontrado.' }), { status: 404 });
     const total = Number(f.n);
-    const ext = path.split('.').pop()?.toLowerCase() ?? '';
-    const type = MIME[ext] ?? String(f.content_type);
-    const headers: Record<string, string> = {
-      'Content-Type': type,
-      'Cache-Control': 'private, max-age=3600',
-      'X-Content-Type-Options': 'nosniff',
-    };
-    // SVG e HTML nunca são exibidos inline (evita scripts embutidos)
-    if (opts.download || /svg|html/.test(type)) {
-      headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(opts.download ?? path.split('/').pop() ?? 'arquivo')}`;
-    }
-    headers['Content-Length'] = String(total);
+    const headers = fileHeaders(path, String(f.content_type), total, opts);
     // Envia em pedaços de 1 MB: não carrega o arquivo inteiro na memória e não
     // esbarra no limite de resposta das funções da Vercel
     const SLICE = 1024 * 1024;

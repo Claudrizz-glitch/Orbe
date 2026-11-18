@@ -1,9 +1,10 @@
 'use client';
 
-import type { Category, Channel, Identity, SortMode, Space } from '@/lib/types';
+import type { Attachment, Category, Channel, Identity, SortMode, Space } from '@/lib/types';
 import { MessageList, type ChannelOption } from './MessageList';
+import { PageView } from './PageView';
 import type { ExportRequest } from './ExportDialog';
-import { IconDiscord, IconHash, IconMenu, IconOrbit, IconPlus, IconSidebar } from './ui/Icons';
+import { IconDiscord, IconHash, IconMenu, IconOrbit, IconPage, IconPlus, IconSidebar } from './ui/Icons';
 
 interface Props {
   space: Space | null;
@@ -25,6 +26,9 @@ interface Props {
   onSortModeChange: (mode: SortMode) => Promise<void>;
   onOpenChannel: (channelId: string, messageId?: string) => void;
   onExport: (req: ExportRequest) => void;
+  onMakePage: (a: Attachment) => void;
+  onChannelUpdated: (c: Channel) => void;
+  onConvertToChat: () => void;
 }
 
 export function MainPanel(p: Props) {
@@ -38,7 +42,7 @@ export function MainPanel(p: Props) {
         </button>
         {channel ? (
           <div className="main__title">
-            <span className="main__chan-icon" style={{ color: channel.color ?? undefined }}>{channel.icon ?? <IconHash size={17} />}</span>
+            <span className="main__chan-icon" style={{ color: channel.color ?? undefined }}>{channel.icon ?? (channel.kind === 'page' ? <IconPage size={17} /> : <IconHash size={17} />)}</span>
             <h2>{channel.name}</h2>
             {(space || category) && <span className="main__crumb">{space?.name}{category ? ` / ${category.name}` : ''}</span>}
             {channel.topic && <span className="main__topic" title={channel.topic}>{channel.topic}</span>}
@@ -50,10 +54,13 @@ export function MainPanel(p: Props) {
         {channel && <div id="chan-actions" key={channel.id} className="main__actions" />}
       </header>
 
-      {channel ? (
+      {channel && channel.kind === 'page' ? (
+        <PageView key={`${channel.id}-page`} channel={channel} onChannelUpdated={p.onChannelUpdated} onConvertToChat={p.onConvertToChat} />
+      ) : channel ? (
         <MessageList key={channel.id} channel={channel} identities={p.identities} channels={p.channelOptions}
           activeIdentityId={p.activeIdentityId} onIdentityChange={p.onIdentityChange} onManageIdentities={p.onManageIdentities}
-          jumpTo={p.jumpTo} onJumped={p.onJumped} onSortModeChange={p.onSortModeChange} onOpenChannel={p.onOpenChannel} onExport={p.onExport} />
+          jumpTo={p.jumpTo} onJumped={p.onJumped} onSortModeChange={p.onSortModeChange} onOpenChannel={p.onOpenChannel} onExport={p.onExport}
+          onMakePage={p.onMakePage} />
       ) : (
         <div className="main__body">
           {!p.hasSpaces ? (

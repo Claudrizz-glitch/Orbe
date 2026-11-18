@@ -29,5 +29,40 @@ export function safeName(name: string) {
   return clean || 'arquivo';
 }
 
+/**
+ * Política aplicada a HTML/SVG exibidos dentro do ORBE: o documento roda numa
+ * "origem opaca" — scripts funcionam (páginas interativas), mas NÃO acessam a
+ * sessão, os cookies nem a API do ORBE. Vale mesmo se o link for aberto direto.
+ */
+export const SANDBOX_CSP =
+  "sandbox allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox allow-modals allow-downloads; frame-ancestors 'self'";
+
+const INLINE_TYPES: Record<string, string> = {
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', avif: 'image/avif',
+  pdf: 'application/pdf', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav',
+  txt: 'text/plain; charset=utf-8', md: 'text/plain; charset=utf-8', csv: 'text/plain; charset=utf-8', json: 'text/plain; charset=utf-8',
+  html: 'text/html; charset=utf-8', htm: 'text/html; charset=utf-8', svg: 'image/svg+xml',
+};
+
+/** Cabeçalhos de entrega de um arquivo armazenado (download, exibição comum ou isolada). */
+export function fileHeaders(path: string, storedType: string, size: number | null, opts: { download?: string; view?: boolean }) {
+  const ext = path.split('.').pop()?.toLowerCase() ?? '';
+  const stored = storedType.split(';')[0].trim().toLowerCase();
+  const type = INLINE_TYPES[ext] ?? (stored || 'application/octet-stream');
+  const risky = /html|svg|xml/.test(type) || ['html', 'htm', 'svg', 'xhtml', 'xml'].includes(ext);
+  const headers: Record<string, string> = {
+    'Content-Type': risky && !opts.view ? 'application/octet-stream' : type,
+    'Cache-Control': 'private, max-age=3600',
+    'X-Content-Type-Options': 'nosniff',
+  };
+  if (size !== null) headers['Content-Length'] = String(size);
+  if (risky && opts.view && !opts.download) {
+    headers['Content-Security-Policy'] = SANDBOX_CSP; // exibido, mas isolado
+  } else if (opts.download || risky) {
+    headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(opts.download ?? path.split('/').pop() ?? 'arquivo')}`;
+  }
+  return headers;
+}
+
 export const MAX_ATTACHMENT = 25 * 1024 * 1024;  // por arquivo
 export const MAX_CHUNK = 3.5 * 1024 * 1024;      // por requisição (Vercel aceita ~4,5 MB)
