@@ -28,7 +28,7 @@ export const POST = protectedRoute(async (req) => {
   const readable = await discordReadable();
   // Mensagens futuras destes autores (reimportações) também vão direto ao #log
   const authorIds = (await s.select<{ external_id: string }>('import_map', { eq: { source: 'discord', kind: 'identity' }, in: { local_id: ids } }))
-    .map((r) => r.external_id).filter((x) => /^\d+$/.test(x));
+    .map((r) => r.external_id.replace(/^webhook:(\d+):.*$/, '$1')).filter((x) => /^\d+$/.test(x));
   await addLogAuthors(authorIds);
 
   let moved = 0;

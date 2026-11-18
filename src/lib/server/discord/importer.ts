@@ -108,13 +108,16 @@ type Kind = 'space' | 'category' | 'channel' | 'identity';
 const LOCAL_TABLE: Record<Kind, 'spaces' | 'categories' | 'channels' | 'identities'> = { space: 'spaces', category: 'categories', channel: 'channels', identity: 'identities' };
 
 /** Busca vários mapeamentos de uma vez, ignorando os que apontam para itens já excluídos no ORBE. */
-async function mapGetMany(kind: Kind, ext: string[]): Promise<Map<string, string>> {
+async function mapGetMany(kind: Kind, ext: string[], deleted?: Set<string>): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (!ext.length) return out;
   const rows = await store().select<{ external_id: string; local_id: string }>('import_map', { eq: { source: SOURCE, kind }, in: { external_id: ext } });
   if (!rows.length) return out;
   const alive = new Set((await store().select<{ id: string }>(LOCAL_TABLE[kind], { cols: 'id', in: { id: rows.map((r) => r.local_id) } })).map((r) => r.id));
-  for (const r of rows) if (alive.has(r.local_id)) out.set(r.external_id, r.local_id);
+  for (const r of rows) {
+    if (alive.has(r.local_id)) out.set(r.external_id, r.local_id);
+    else deleted?.add(r.external_id); // já importado e depois excluído no ORBE
+  }
   return out;
 }
 async function mapSet(kind: Kind, ext: string, local: string) {
@@ -186,9 +189,11 @@ async function importStructure(j: JobRow) {
 
   // Categorias
   const cats = all.filter((c) => c.type === CH.CATEGORY).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-  const catMap = await mapGetMany('category', cats.map((c) => c.id));
+  // Categorias e canais excluídos no ORBE não voltam numa reimportação
+  const goneCats = new Set<string>();
+  const catMap = await mapGetMany('category', cats.map((c) => c.id), goneCats);
   for (const c of cats) {
-    if (catMap.has(c.id)) continue;
+    if (catMap.has(c.id) || goneCats.has(c.id)) continue;
     const [row] = await s.insert<{ id: string }>('categories', [{ space_id: spaceId, name: c.name.slice(0, 100), position: await nextPosition('categories', { space_id: spaceId }) }], { cols: 'id' });
     catMap.set(c.id, row.id);
     await mapSet('category', c.id, row.id);
@@ -200,7 +205,7 @@ async function importStructure(j: JobRow) {
     .filter((c) => (c.parent_id ?? null) === pid && (TEXT_TYPES.has(c.type) || c.type === CH.FORUM || c.type === CH.MEDIA))
     .sort((a, b) => (Number(a.type === CH.VOICE || a.type === CH.STAGE) - Number(b.type === CH.VOICE || b.type === CH.STAGE)) || (a.position ?? 0) - (b.position ?? 0));
   const ordered: { ch: DChannel; catDid: string | null; label: string; icon: string | null }[] = [];
-  for (const pid of [null, ...cats.map((c) => c.id)]) {
+  for (const pid of [null, ...cats.filter((c) => !goneCats.has(c.id)).map((c) => c.id)]) {
     for (const c of byParent(pid)) {
       const isForum = c.type === CH.FORUM || c.type === CH.MEDIA;
       if (!isForum) ordered.push({ ch: c, catDid: pid, label: c.name, icon: c.type === CH.ANNOUNCEMENT ? '📢' : c.type === CH.VOICE || c.type === CH.STAGE ? '🔊' : null });
@@ -210,9 +215,12 @@ async function importStructure(j: JobRow) {
     }
   }
 
-  const chMap = await mapGetMany('channel', ordered.map((o) => o.ch.id));
+  const goneChans = new Set<string>();
+  const chMap = await mapGetMany('channel', ordered.map((o) => o.ch.id), goneChans);
   const chans: ChanState[] = [];
+  let skipped = 0;
   for (const o of ordered) {
+    if (goneChans.has(o.ch.id)) { skipped++; continue; }
     let lid = chMap.get(o.ch.id);
     let last: string | null = null;
     let pos = 0;
@@ -238,7 +246,8 @@ async function importStructure(j: JobRow) {
   j.state.channels = chans;
   j.state.phase = 'messages';
   j.state.idx = 0;
-  log(j, `Estrutura pronta: ${cats.length} categorias, ${chans.length} canais (incluindo tópicos).`);
+  log(j, `Estrutura pronta: ${cats.length - goneCats.size} categorias, ${chans.length} canais (incluindo tópicos).`);
+  if (goneCats.size || skipped) log(j, `Mantidos fora (excluídos no ORBE): ${goneCats.size} categorias, ${skipped} canais.`);
 }
 
 // ── Identidades (autores) ──────────────────────────────────
@@ -274,7 +283,13 @@ async function ensureIdentities(j: JobRow, msgs: DMessage[], ownerId: string | n
 }
 
 // ── Etapa 2: mensagens ─────────────────────────────────────
-interface LogCtx { authors: Set<string>; channelId?: string; readable?: (t: string | undefined) => string | undefined }
+interface LogCtx { authors: Set<string>; noFiles: Set<string>; channelId?: string; readable?: (t: string | undefined) => string | undefined }
+
+/** Canais do Discord cujos anexos não são baixados (ex.: canais só de mídia muito pesados). */
+async function noFileChannels(): Promise<Set<string>> {
+  const [r] = await store().select<{ value: { ids?: string[] } }>('settings', { cols: 'value', eq: { key: 'discord.skip_attachments' } });
+  return new Set(r?.value?.ids ?? []);
+}
 
 async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null, lg: LogCtx) {
   const s = store();
@@ -298,8 +313,7 @@ async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null, lg:
 
   if (msgs.length) {
     // Autores de registro (ex.: Loritta) não ganham perfil: viram registros soltos no #log
-    const toLog = (m: DMessage) => !m.webhook_id && lg.authors.has(m.author.id);
-    const authors = await ensureIdentities(j, msgs.filter((m) => !toLog(m)), ownerId);
+    const toLog = (m: DMessage) => lg.authors.has(m.author.id);
     if (msgs.some(toLog) && !lg.channelId) {
       lg.channelId = (await logTarget()).channelId;
       lg.readable = await discordReadable();
@@ -317,10 +331,16 @@ async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null, lg:
       cols: 'id, source_ref', in: { source_ref: msgs.map((m) => `discord:${m.id}`) },
     })).map((r) => [r.source_ref.slice(8), r.id]));
     const ids = new Map(msgs.map((m) => [m.id, existing.get(m.id) ?? randomUUID()]));
+    // Perfis só para autores de mensagens realmente novas (e que não vão ao #log)
+    const authors = await ensureIdentities(j, msgs.filter((m) => !existing.has(m.id) && !toLog(m)), ownerId);
 
     const lk = { channels: j.state.names, roles: j.state.roles };
+    const keepFiles = j.options.attachments !== false && !lg.noFiles.has(ch.did);
     const rows = msgs.filter((m) => !existing.has(m.id)).map((m) => {
       let content = convertContent(m, lk);
+      if (!keepFiles && m.attachments?.length) {
+        content = [content, ...m.attachments.map((a) => `*[anexo não importado: ${a.filename}]*`)].filter(Boolean).join('\n');
+      }
       const embeds = convertEmbeds(m.embeds);
       const stickers = (m.sticker_items ?? []).map((x) => x.name);
       if (!content && !m.attachments?.length && !embeds.length && stickers.length) content = `*[figurinha: ${stickers.join(', ')}]*`;
@@ -357,7 +377,7 @@ async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null, lg:
     j.stats.messages += inserted.length;
     ch.count += inserted.length;
 
-    if (j.options.attachments !== false) {
+    if (keepFiles) {
       for (const m of msgs) {
         if (!fresh.has(`discord:${m.id}`)) continue;
         (m.attachments ?? []).forEach((att, i) => j.state.pending.push({ mid: ids.get(m.id)!, dmsg: m.id, dchan: ch.did, att, pos: i }));
@@ -414,7 +434,8 @@ export async function runStep(id: string, budgetMs = 20000): Promise<JobRow | nu
 
   const [owner] = await store().select<{ id: string }>('identities', { cols: 'id', eq: { is_owner: true }, limit: 1 });
   const ownerId = owner?.id ?? null;
-  const lg: LogCtx = { authors: await logAuthors() };
+  const lg: LogCtx = { authors: await logAuthors(), noFiles: await noFileChannels() };
+  if (lg.noFiles.size) j.state.pending = j.state.pending.filter((p) => !lg.noFiles.has(p.dchan));
 
   try {
     if (j.state.phase === 'structure') await importStructure(j);
