@@ -153,13 +153,35 @@ export const postgresStore: Store = {
     );
   },
 
+  async appendFile(path, data) {
+    const r = await sql().unsafe(
+      'update files set data = data || $2, size_bytes = size_bytes + $3 where path = $1 returning 1',
+      [path, Buffer.from(data), data.byteLength] as never[],
+    );
+    if (!r.length) throw new Error('Envio não iniciado (parte inicial ausente).');
+  },
+
+  async copyFile(from, to) {
+    await sql().unsafe(
+      `insert into files (path, content_type, size_bytes, data) select $2, content_type, size_bytes, data from files where path = $1
+       on conflict (path) do nothing`,
+      [from, to] as never[],
+    );
+  },
+
+  async fileSize(path) {
+    const [r] = await sql().unsafe('select octet_length(data)::int as n from files where path = $1', [path] as never[]);
+    return r ? (r as unknown as { n: number }).n : null;
+  },
+
   async removeFile(path) {
     await sql().unsafe('delete from files where path = $1', [path] as never[]);
   },
 
   async fileResponse(path, opts = {}) {
-    const [f] = await sql().unsafe('select content_type, data from files where path = $1', [path] as never[]);
+    const [f] = await sql().unsafe('select content_type, octet_length(data)::int as n from files where path = $1', [path] as never[]);
     if (!f) return new Response(JSON.stringify({ error: 'Arquivo não encontrado.' }), { status: 404 });
+    const total = Number(f.n);
     const ext = path.split('.').pop()?.toLowerCase() ?? '';
     const type = MIME[ext] ?? String(f.content_type);
     const headers: Record<string, string> = {
@@ -171,6 +193,21 @@ export const postgresStore: Store = {
     if (opts.download || /svg|html/.test(type)) {
       headers['Content-Disposition'] = `attachment; filename*=UTF-8''${encodeURIComponent(opts.download ?? path.split('/').pop() ?? 'arquivo')}`;
     }
-    return new Response(new Uint8Array(f.data as Buffer), { headers });
+    headers['Content-Length'] = String(total);
+    // Envia em pedaços de 1 MB: não carrega o arquivo inteiro na memória e não
+    // esbarra no limite de resposta das funções da Vercel
+    const SLICE = 1024 * 1024;
+    let offset = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      async pull(ctrl) {
+        if (offset >= total) { ctrl.close(); return; }
+        const [c] = await sql().unsafe('select substring(data from $2 for $3) as d from files where path = $1', [path, offset + 1, SLICE] as never[]);
+        const chunk = new Uint8Array((c as unknown as { d: Buffer }).d);
+        offset += chunk.byteLength || SLICE;
+        if (chunk.byteLength) ctrl.enqueue(chunk);
+        if (offset >= total || !chunk.byteLength) ctrl.close();
+      },
+    });
+    return new Response(stream, { headers });
   },
 };

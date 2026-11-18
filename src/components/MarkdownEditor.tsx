@@ -20,6 +20,8 @@ interface Props {
   /** Elementos à direita da barra (ex.: botão enviar) */
   trailing?: ReactNode;
   compact?: boolean;
+  /** Arquivos colados (ex.: captura de tela com Ctrl+V) */
+  onPasteFiles?: (files: File[]) => void;
 }
 
 const TOOLS: { kind: FormatKind; label: string; title: string; glyph: ReactNode }[] = [
@@ -40,7 +42,7 @@ const TOOLS: { kind: FormatKind; label: string; title: string; glyph: ReactNode 
 ];
 
 export const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownEditor(
-  { value, onChange, onSubmit, onCancel, placeholder, autoFocus, enterSends = true, leading, trailing, compact }, ref,
+  { value, onChange, onSubmit, onCancel, placeholder, autoFocus, enterSends = true, leading, trailing, compact, onPasteFiles }, ref,
 ) {
   const ta = useRef<HTMLTextAreaElement>(null);
   const [preview, setPreview] = useState(false);
@@ -116,6 +118,10 @@ export const MarkdownEditor = forwardRef<EditorHandle, Props>(function MarkdownE
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={(e) => {
+            const files = [...e.clipboardData.files];
+            if (files.length && onPasteFiles) { e.preventDefault(); onPasteFiles(files); }
+          }}
           spellCheck
         />
       )}

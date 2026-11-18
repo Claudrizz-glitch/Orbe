@@ -36,6 +36,11 @@ export interface Store {
   moveChannel(channelId: string, categoryId: string | null, orderedIds: string[]): Promise<void>;
   putFile(path: string, data: Uint8Array, contentType: string): Promise<void>;
   removeFile(path: string): Promise<void>;
+  /** Acrescenta bytes ao fim de um arquivo existente (envio em partes). */
+  appendFile(path: string, data: Uint8Array): Promise<void>;
+  copyFile(from: string, to: string): Promise<void>;
+  /** Tamanho em bytes, ou null se não existe. */
+  fileSize(path: string): Promise<number | null>;
   /** Resposta HTTP que entrega o arquivo (stream local ou redirecionamento assinado). */
   fileResponse(path: string, opts?: { download?: string }): Promise<Response>;
 }

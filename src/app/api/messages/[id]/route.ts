@@ -22,7 +22,9 @@ export const PATCH = protectedRoute<Ctx>(async (req, { params }) => {
   const patch: Record<string, unknown> = {};
   if (b.content !== undefined) {
     const content = v.content(b.content);
-    if (!content.trim()) throw new ApiError(400, 'A mensagem não pode ficar vazia. Use “Excluir” para removê-la.');
+    if (!content.trim() && !(await s.count('attachments', { eq: { message_id: id } }))) {
+      throw new ApiError(400, 'A mensagem não pode ficar vazia. Use “Excluir” para removê-la.');
+    }
     if (content !== cur.content) { patch.content = content; patch.edited_at = new Date().toISOString(); }
   }
   if (b.identity_id !== undefined) {

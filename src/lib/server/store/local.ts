@@ -232,6 +232,20 @@ export const localStore: Store = {
     await fs.writeFile(full, data);
   },
 
+  async appendFile(p, data) {
+    await fs.appendFile(safeFilePath(p), data);
+  },
+
+  async copyFile(from, to) {
+    const dst = safeFilePath(to);
+    await fs.mkdir(path.dirname(dst), { recursive: true });
+    await fs.copyFile(safeFilePath(from), dst);
+  },
+
+  async fileSize(p) {
+    try { return (await fs.stat(safeFilePath(p))).size; } catch { return null; }
+  },
+
   async removeFile(p) {
     await fs.rm(safeFilePath(p), { force: true });
   },

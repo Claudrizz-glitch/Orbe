@@ -192,6 +192,7 @@ select.input { appearance: none; background-image: linear-gradient(45deg, transp
 .ctx-backdrop { position: fixed; inset: 0; z-index: 90; }
 .ctx-menu {
   position: fixed; min-width: 196px; padding: 5px; border-radius: 11px;
+  max-height: calc(100dvh - 16px); overflow-y: auto;
   background: color-mix(in srgb, var(--surface-2) 92%, transparent); backdrop-filter: blur(14px);
   box-shadow: var(--shadow); animation: pop .12s var(--ease);
 }

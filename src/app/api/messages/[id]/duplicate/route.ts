@@ -1,13 +1,16 @@
 import { ApiError, json, protectedRoute } from '@/lib/server/api';
 import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
-import { MESSAGE_COLS, type Message } from '@/lib/types';
+import { randomUUID } from 'node:crypto';
+import { MESSAGE_COLS, type Attachment, type Message } from '@/lib/types';
+
+const ATT_COLS = 'id, message_id, storage_path, file_name, mime_type, size_bytes, width, height';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 /**
  * Duplica uma mensagem logo abaixo da original (mesmo autor, texto e data exibida).
- * Anexos ainda não são copiados — a duplicação de arquivos chega com a Fase 4.
+ * Os anexos são copiados (arquivo e registro).
  */
 export const POST = protectedRoute<Ctx>(async (_req, { params }) => {
   const id = v.uuid((await params).id);
@@ -29,6 +32,20 @@ export const POST = protectedRoute<Ctx>(async (_req, { params }) => {
     channel_id: src.channel_id, identity_id: src.identity_id, content: src.content,
     display_at: src.display_at, position, extra,
   }], { cols: MESSAGE_COLS });
-  const hadFiles = (await s.count('attachments', { eq: { message_id: id } })) > 0;
-  return json({ message: row, attachments_skipped: hadFiles }, 201);
+  // Copia os anexos (arquivo e registro) para a nova mensagem
+  const atts = await s.select<Attachment>('attachments', { cols: ATT_COLS + ', position', eq: { message_id: id }, order: [{ col: 'position' }] });
+  let failed = 0;
+  const copies: Attachment[] = [];
+  for (const a of atts) {
+    const to = `attachments/${row.id}/${randomUUID()}-${a.storage_path.split('/').pop()!.replace(/^[0-9a-f-]{36}-/, '')}`;
+    try {
+      await s.copyFile(a.storage_path, to);
+      const [c] = await s.insert<Attachment>('attachments', [{
+        message_id: row.id, storage_path: to, file_name: a.file_name, mime_type: a.mime_type,
+        size_bytes: a.size_bytes, width: a.width, height: a.height, position: (a as Attachment & { position: number }).position,
+      }], { cols: ATT_COLS });
+      copies.push(c);
+    } catch { failed++; }
+  }
+  return json({ message: row, attachments: copies, attachments_skipped: failed > 0 }, 201);
 });

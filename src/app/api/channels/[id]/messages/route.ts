@@ -70,7 +70,8 @@ export const POST = protectedRoute<Ctx>(async (req, { params }) => {
   if (!(await s.count('channels', { eq: { id: channel_id } }))) throw new ApiError(404, 'Canal não encontrado.');
 
   const content = v.content(b.content);
-  if (!content.trim()) throw new ApiError(400, 'A mensagem está vazia.');
+  // Mensagem só com anexos: o texto pode ser vazio quando arquivos vêm em seguida
+  if (!content.trim() && b.with_attachments !== true) throw new ApiError(400, 'A mensagem está vazia.');
   const identity_id = b.identity_id == null ? null : v.uuid(b.identity_id, 'Identidade');
   if (identity_id && !(await s.count('identities', { eq: { id: identity_id } }))) throw new ApiError(400, 'Identidade não encontrada.');
   const display_at = b.display_at === undefined ? new Date().toISOString() : v.isoDate(b.display_at, 'Data de exibição');

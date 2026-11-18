@@ -80,6 +80,19 @@ export const supabaseStore: Store = {
     if (error) throw error;
   },
 
+  async appendFile() {
+    throw new Error('Envio de anexos em partes não é suportado no modo Supabase. Use ORBE_STORAGE=postgres.');
+  },
+
+  async copyFile(from, to) {
+    const { error } = await db().storage.from(BUCKET).copy(from, to);
+    if (error) throw error;
+  },
+
+  async fileSize() {
+    return null;
+  },
+
   async removeFile(path) {
     await db().storage.from(BUCKET).remove([path]);
   },

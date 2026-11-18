@@ -10,7 +10,10 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '@/lib/client/api';
 import { plainText, renderMarkdown } from '@/lib/markdown';
 import type { Attachment, Channel, Identity, Message, MessagePage, ReplyPreview, SortMode } from '@/lib/types';
-import { IconAlert, IconEdit, IconGrip, IconHash, IconLink, IconMore, IconMove, IconPin, IconRefresh, IconReply, IconSort, IconTrash } from './ui/Icons';
+import { IconAlert, IconClock, IconDownload, IconEdit, IconExternal, IconGrip, IconHash, IconLink, IconMore, IconMove, IconPaperclip, IconPin, IconRefresh, IconReply, IconSort, IconTrash } from './ui/Icons';
+import { Lightbox } from './Lightbox';
+import { humanSize, uploadAttachment } from '@/lib/client/upload';
+import { downloadBlob, makeZip, uniqueName } from '@/lib/client/zip';
 import { useContextMenu, type MenuEntry } from './ui/ContextMenu';
 import { useConfirm } from './ui/ConfirmDialog';
 import { useToast } from './ui/Toasts';
@@ -35,7 +38,12 @@ interface Props {
 }
 
 /** Mensagem local ainda não confirmada pelo servidor */
-interface Pending { tmp: string; content: string; identity_id: string | null; reply_to_id: string | null; display_at: string; status: 'sending' | 'failed'; error?: string }
+interface Pending {
+  tmp: string; content: string; identity_id: string | null; reply_to_id: string | null; display_at: string;
+  status: 'sending' | 'failed'; error?: string;
+  files: File[]; done: number; current?: string; progress?: number;
+  messageId?: string; created?: Message;
+}
 
 const GROUP_MS = 7 * 60 * 1000;
 const fmtTime = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -61,25 +69,41 @@ export function Avatar({ identity, size }: { identity: Identity | undefined; siz
   );
 }
 
-function humanSize(n: number) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 ** 2).toFixed(1)} MB`;
-}
+export const isImage = (a: Attachment) => a.mime_type.startsWith('image/') && !a.mime_type.includes('svg');
 
-function AttachmentView({ a }: { a: Attachment }) {
+function AttachmentView({ a, onOpen, onRemove }: { a: Attachment; onOpen?: () => void; onRemove?: () => void }) {
   const url = fileUrl(a.storage_path);
-  if (a.mime_type.startsWith('image/') && !a.mime_type.includes('svg')) {
-    return <a href={url} target="_blank" rel="noreferrer"><img className="att-img" src={url} alt={a.file_name} loading="lazy" width={a.width ?? undefined} height={a.height ?? undefined} /></a>;
+  const dl = `${url}?download=${encodeURIComponent(a.file_name)}`;
+  const remove = onRemove && (
+    <button type="button" className="att-x" onClick={onRemove} aria-label={`Remover ${a.file_name}`} title="Remover anexo">×</button>
+  );
+  if (isImage(a)) {
+    // Reserva o espaço pela proporção real (evita a tela "pular" ao carregar)
+    const ratio = a.width && a.height ? `${a.width} / ${a.height}` : undefined;
+    return (
+      <div className="att-wrap">
+        <button type="button" className="att-imgbtn" onClick={onOpen} title={`${a.file_name} — clique para ampliar`}>
+          <img className="att-img" src={url} alt={a.file_name} loading="lazy" style={{ aspectRatio: ratio }} width={a.width ?? undefined} height={a.height ?? undefined} />
+        </button>
+        <a className="att-dl" href={dl} title="Baixar imagem" aria-label={`Baixar ${a.file_name}`} onClick={(e) => e.stopPropagation()}><IconDownload size={15} /></a>
+        {remove}
+      </div>
+    );
   }
-  if (a.mime_type.startsWith('video/')) return <video className="att-img" src={url} controls preload="metadata" />;
-  if (a.mime_type.startsWith('audio/')) return <audio src={url} controls preload="none" />;
+  if (a.mime_type.startsWith('video/')) return <div className="att-wrap"><video className="att-img" src={url} controls preload="metadata" />{remove}</div>;
+  if (a.mime_type.startsWith('audio/')) return <div className="att-wrap att-wrap--audio"><audio src={url} controls preload="none" />{remove}</div>;
   const ext = a.file_name.includes('.') ? a.file_name.split('.').pop()!.slice(0, 4) : 'arq';
+  const viewable = a.mime_type === 'application/pdf' || a.mime_type.startsWith('text/');
   return (
-    <a className="att-file" href={`${url}?download=${encodeURIComponent(a.file_name)}`}>
-      <span className="att-file__ext">{ext}</span>
-      <span>{a.file_name}<small>{humanSize(a.size_bytes)}</small></span>
-    </a>
+    <div className="att-wrap">
+      <div className="att-file">
+        <span className="att-file__ext">{ext}</span>
+        <span className="att-file__info">{a.file_name}<small>{humanSize(a.size_bytes)}</small></span>
+        {viewable && <a className="icon-btn icon-btn--sm" href={url} target="_blank" rel="noreferrer" title="Visualizar"><IconExternal size={14} /></a>}
+        <a className="icon-btn icon-btn--sm" href={dl} title="Baixar" aria-label={`Baixar ${a.file_name}`}><IconDownload size={15} /></a>
+      </div>
+      {remove}
+    </div>
   );
 }
 
@@ -117,6 +141,11 @@ interface RowProps {
   onEditCancel: () => void;
   onReply: () => void;
   onJump: (id: string) => void;
+  onDateEdit: () => void;
+  onOpenImage: (a: Attachment) => void;
+  onRemoveAttachment: (a: Attachment) => void;
+  onAddFiles: (files: File[]) => void;
+  uploading: string | null;
 }
 
 const MessageRow = memo(function MessageRow(p: RowProps) {
@@ -153,16 +182,28 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
           {!p.cont && (
             <div className="msg__head">
               <span className="msg__author">{idn?.name ?? 'Sem autor'}</span>
-              <time className="msg__time" dateTime={m.display_at} title={fmtLong.format(d)}>{fmtFull.format(d)}</time>
+              <button type="button" className="msg__time msg__time--btn" onClick={p.onDateEdit} title={`${fmtLong.format(d)} — clique para alterar a data e hora`}>
+                <time dateTime={m.display_at}>{fmtFull.format(d)}</time>
+              </button>
               {m.pinned_at && <span className="msg__pin" title="Fixada"><IconPin size={11} /> fixada</span>}
             </div>
           )}
           {p.editing ? (
             <div className="msg__edit">
-              <MarkdownEditor compact autoFocus value={p.editing.text} onChange={p.onEditChange} onSubmit={p.onEditSave} onCancel={p.onEditCancel} />
+              <MarkdownEditor compact autoFocus value={p.editing.text} onChange={p.onEditChange} onSubmit={p.onEditSave} onCancel={p.onEditCancel}
+                onPasteFiles={p.onAddFiles} />
               <div className="msg__edit-hint">
                 Esc <button className="link-btn" onClick={p.onEditCancel}>cancelar</button> · Enter <button className="link-btn" onClick={p.onEditSave} disabled={p.editing.saving}>{p.editing.saving ? 'salvando…' : 'salvar'}</button>
+                {' · '}
+                <label className="link-btn" style={{ cursor: 'pointer' }}>
+                  <input type="file" multiple hidden onChange={(e) => { p.onAddFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
+                  anexar arquivo
+                </label>
+                {p.uploading && <span className="muted"> · enviando {p.uploading}…</span>}
               </div>
+              {p.atts && p.atts.length > 0 && (
+                <div className="atts atts--edit">{p.atts.map((a) => <AttachmentView key={a.id} a={a} onRemove={() => p.onRemoveAttachment(a)} />)}</div>
+              )}
             </div>
           ) : (
             <>
@@ -175,14 +216,15 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
                   {e.footer && <small className="muted">{e.footer}</small>}
                 </div>
               ))}
-              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} />)}</div>}
+              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} onOpen={() => p.onOpenImage(a)} />)}</div>}
             </>
           )}
         </div>
         {!p.editing && (
           <div className="msg__actions" role="toolbar" aria-label="Ações da mensagem">
             <button className="icon-btn icon-btn--sm" title="Responder" aria-label="Responder" onClick={p.onReply}><IconReply size={15} /></button>
-            <button className="icon-btn icon-btn--sm" title="Editar" aria-label="Editar mensagem" onClick={p.onEditStart}><IconEdit size={15} /></button>
+            <button className="icon-btn icon-btn--sm" title="Editar texto" aria-label="Editar mensagem" onClick={p.onEditStart}><IconEdit size={15} /></button>
+            <button className="icon-btn icon-btn--sm" title="Alterar data e hora" aria-label="Alterar data e hora" onClick={p.onDateEdit}><IconClock size={15} /></button>
             <button className="icon-btn icon-btn--sm" title="Mais ações" aria-label="Mais ações" onClick={ctx.fromButton(p.menu)}><IconMore size={15} /></button>
           </div>
         )}
@@ -207,6 +249,9 @@ export function MessageList(props: Props) {
   const [dateFor, setDateFor] = useState<Message | null>(null);
   const [moveFor, setMoveFor] = useState<Message | null>(null);
   const [pinsOpen, setPinsOpen] = useState(false);
+  const [viewer, setViewer] = useState<{ images: Attachment[]; start: number } | null>(null);
+  const [zipping, setZipping] = useState<string | null>(null);
+  const [uploadingTo, setUploadingTo] = useState<{ id: string; name: string } | null>(null);
   const [tapped, setTapped] = useState<string | null>(null);
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -333,24 +378,58 @@ export function MessageList(props: Props) {
   }
 
   // ── Envio ────────────────────────────────────────────
+  const updPending = (tmp: string, patch: Partial<Pending>) =>
+    setPending((list) => list.map((x) => (x.tmp === tmp ? { ...x, ...patch } : x)));
+
+  /**
+   * Envia a mensagem e depois cada anexo, em ordem. Se algo falhar, o item fica na tela
+   * com "Tentar de novo", que continua de onde parou (sem recriar a mensagem nem reenviar
+   * arquivos que já chegaram).
+   */
   async function deliver(p: Pending) {
-    setPending((list) => list.map((x) => (x.tmp === p.tmp ? { ...x, status: 'sending', error: undefined } : x)));
+    updPending(p.tmp, { status: 'sending', error: undefined });
+    let messageId = p.messageId;
+    let created: Message | null = null;
     try {
-      const m = await api<Message>(`/api/channels/${channel.id}/messages`, { method: 'POST', body: { content: p.content, identity_id: p.identity_id, reply_to_id: p.reply_to_id } });
+      if (!messageId) {
+        created = await api<Message>(`/api/channels/${channel.id}/messages`, {
+          method: 'POST',
+          body: { content: p.content, identity_id: p.identity_id, reply_to_id: p.reply_to_id, with_attachments: p.files.length > 0 },
+        });
+        messageId = created.id;
+        p.messageId = messageId;
+        p.created = created;
+        updPending(p.tmp, { messageId, created });
+      }
+      for (let i = p.done; i < p.files.length; i++) {
+        const f = p.files[i];
+        updPending(p.tmp, { current: f.name, progress: 0 });
+        const a = await uploadAttachment(messageId, f, (prog) => updPending(p.tmp, { progress: prog }));
+        setAtts((prev) => new Map(prev).set(a.message_id, [...(prev.get(a.message_id) ?? []), a]));
+        p.done = i + 1;
+        updPending(p.tmp, { done: i + 1 });
+      }
+      const m = p.created ?? created;
       setPending((list) => list.filter((x) => x.tmp !== p.tmp));
-      setMessages((list) => sortMessages([...list, m], channel.sort_mode));
+      if (m) setMessages((list) => sortMessages([...list.filter((x) => x.id !== m.id), m], channel.sort_mode));
       if (p.reply_to_id && !replies.has(p.reply_to_id)) {
         const src = byId.get(p.reply_to_id);
         if (src) setReplies((r) => new Map(r).set(src.id, { id: src.id, identity_id: src.identity_id, content: src.content.slice(0, 200) }));
       }
     } catch (e) {
-      setPending((list) => list.map((x) => (x.tmp === p.tmp ? { ...x, status: 'failed', error: (e as Error).message } : x)));
+      updPending(p.tmp, { status: 'failed', error: (e as Error).message });
     }
   }
 
-  function send(content: string) {
+  /** Desiste dos anexos que faltam, mantendo a mensagem já criada. */
+  function keepWithoutRest(p: Pending) {
+    setPending((list) => list.filter((x) => x.tmp !== p.tmp));
+    if (p.created) setMessages((list) => sortMessages([...list.filter((x) => x.id !== p.created!.id), p.created!], channel.sort_mode));
+  }
+
+  function send(content: string, files: File[] = []) {
     const identity_id = activeIdentityId ?? idList.find((i) => i.is_owner)?.id ?? null;
-    const p: Pending = { tmp: `tmp-${Date.now()}-${Math.random()}`, content, identity_id, reply_to_id: replyTo?.id ?? null, display_at: new Date().toISOString(), status: 'sending' };
+    const p: Pending = { tmp: `tmp-${Date.now()}-${Math.random()}`, content, identity_id, reply_to_id: replyTo?.id ?? null, display_at: new Date().toISOString(), status: 'sending', files, done: 0 };
     stick.current = true;
     setReplyTo(null);
     setPending((list) => [...list, p]);
@@ -370,7 +449,7 @@ export function MessageList(props: Props) {
     if (!editing) return;
     const m = byId.get(editing.id);
     if (!m) { setEditing(null); return; }
-    if (!editing.text.trim()) { toast.error('A mensagem não pode ficar vazia. Use “Excluir” para removê-la.'); return; }
+    if (!editing.text.trim() && !(atts.get(m.id)?.length)) { toast.error('A mensagem não pode ficar vazia. Use “Excluir” para removê-la.'); return; }
     if (editing.text === m.content) { setEditing(null); return; }
     setEditing({ ...editing, saving: true });
     if (await patch(m, { content: editing.text })) setEditing(null);
@@ -396,10 +475,76 @@ export function MessageList(props: Props) {
 
   async function duplicate(m: Message) {
     try {
-      const r = await api<{ message: Message; attachments_skipped: boolean }>(`/api/messages/${m.id}/duplicate`, { method: 'POST' });
+      const r = await api<{ message: Message; attachments: Attachment[]; attachments_skipped: boolean }>(`/api/messages/${m.id}/duplicate`, { method: 'POST' });
+      if (r.attachments?.length) setAtts((prev) => new Map(prev).set(r.message.id, r.attachments));
       setMessages((list) => sortMessages([...list, r.message], channel.sort_mode));
-      toast.success(r.attachments_skipped ? 'Mensagem duplicada (os anexos não foram copiados).' : 'Mensagem duplicada.');
+      toast.success(r.attachments_skipped ? 'Mensagem duplicada, mas alguns anexos não puderam ser copiados.' : 'Mensagem duplicada.');
     } catch (e) { toast.error((e as Error).message); }
+  }
+
+  // ── Anexos em mensagens existentes ───────────────────
+  async function removeAttachment(a: Attachment) {
+    const ok = await confirm({
+      title: 'Remover anexo?', danger: true, confirmLabel: 'Remover',
+      message: <><p>“{a.file_name}” ({humanSize(a.size_bytes)}) será apagado.</p><p className="muted">Esta ação não pode ser desfeita.</p></>,
+    });
+    if (!ok) return;
+    try {
+      await api(`/api/attachments/${a.id}`, { method: 'DELETE' });
+      setAtts((prev) => new Map(prev).set(a.message_id, (prev.get(a.message_id) ?? []).filter((x) => x.id !== a.id)));
+      toast.success('Anexo removido.');
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function addFilesTo(messageId: string, files: File[]) {
+    for (const f of files) {
+      setUploadingTo({ id: messageId, name: f.name });
+      try {
+        const a = await uploadAttachment(messageId, f);
+        setAtts((prev) => new Map(prev).set(messageId, [...(prev.get(messageId) ?? []), a]));
+      } catch (e) {
+        toast.error((e as Error).message);
+        break;
+      }
+    }
+    setUploadingTo(null);
+  }
+
+  // ── Visualizador ─────────────────────────────────────
+  const images = useMemo(() => messages.flatMap((m) => (atts.get(m.id) ?? []).filter(isImage)), [messages, atts]);
+  function openImage(a: Attachment) {
+    const i = images.findIndex((x) => x.id === a.id);
+    setViewer({ images, start: Math.max(0, i) });
+  }
+
+  // ── Baixar todos os anexos do canal (.zip gerado no navegador) ──
+  async function downloadAll() {
+    if (zipping) return;
+    try {
+      const list = await api<(Attachment & { display_at: string })[]>(`/api/channels/${channel.id}/attachments`);
+      if (!list.length) { toast.info('Este canal não tem anexos.'); return; }
+      const total = list.reduce((n, a) => n + a.size_bytes, 0);
+      if (total > 400 * 1024 * 1024) { toast.error('Mais de 400 MB de anexos: grande demais para um único .zip no navegador.'); return; }
+      const used = new Set<string>();
+      const entries = [];
+      let failed = 0;
+      for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        setZipping(`${i + 1}/${list.length}`);
+        try {
+          const res = await fetch(fileUrl(a.storage_path), { credentials: 'same-origin' });
+          if (!res.ok) throw new Error();
+          entries.push({ name: uniqueName(a.file_name, used), data: new Uint8Array(await res.arrayBuffer()), date: new Date(a.display_at) });
+        } catch { failed++; }
+      }
+      const safe = channel.name.replace(/[\\/:*?"<>|]+/g, '_');
+      downloadBlob(makeZip(entries), `${safe} - anexos.zip`);
+      toast.success(failed ? `ZIP gerado, mas ${failed} arquivo(s) não puderam ser baixados.` : `${entries.length} anexos baixados em .zip.`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setZipping(null);
+    }
   }
 
   async function copy(text: string, ok: string) {
@@ -469,6 +614,9 @@ export function MessageList(props: Props) {
       <button className={`hbtn ${pinsOpen ? 'is-on' : ''}`} title="Mensagens fixadas" onClick={() => setPinsOpen((o) => !o)}>
         <IconPin size={16} /><span>Fixadas</span>
       </button>
+      <button className={`hbtn ${zipping ? 'is-on' : ''}`} title="Baixar todos os anexos deste canal (.zip)" onClick={downloadAll} disabled={!!zipping}>
+        {zipping ? <span className="spinner" /> : <IconPaperclip size={16} />}<span>{zipping ? `Baixando ${zipping}` : 'Anexos'}</span>
+      </button>
     </>,
     headerSlot,
   );
@@ -504,6 +652,8 @@ export function MessageList(props: Props) {
       )}
       {pinsOpen && <PinsPanel channelId={channel.id} identities={identities} onClose={() => setPinsOpen(false)}
         onJump={(id) => { setPinsOpen(false); void jumpTo(id); }} />}
+      {viewer && <Lightbox images={viewer.images} start={viewer.start} onClose={() => setViewer(null)}
+        caption={(a) => { const m = byId.get(a.message_id); const idn = m?.identity_id ? identities.get(m.identity_id) : undefined; return m ? `${idn?.name ?? 'Sem autor'}, ${fmtFull.format(new Date(m.display_at))}` : undefined; }} />}
     </>
   );
 
@@ -563,7 +713,10 @@ export function MessageList(props: Props) {
                       onEditStart={() => setEditing({ id: m.id, text: m.content, saving: false })}
                       onEditChange={(text) => setEditing((e) => (e ? { ...e, text } : e))}
                       onEditSave={saveEdit} onEditCancel={() => setEditing(null)}
-                      onReply={() => setReplyTo(m)} onJump={jumpTo} />
+                      onReply={() => setReplyTo(m)} onJump={jumpTo} onDateEdit={() => setDateFor(m)}
+                      onOpenImage={openImage} onRemoveAttachment={removeAttachment}
+                      onAddFiles={(files) => void addFilesTo(m.id, files)}
+                      uploading={uploadingTo?.id === m.id ? uploadingTo.name : null} />
                   );
                 })}
               </SortableContext>
@@ -576,14 +729,31 @@ export function MessageList(props: Props) {
                   <div className="msg__body">
                     <div className="msg__head">
                       <span className="msg__author">{idn?.name ?? 'Sem autor'}</span>
-                      <span className="msg__time">{p.status === 'sending' ? 'enviando…' : 'não enviada'}</span>
+                      <span className="msg__time">{p.status === 'sending' ? 'enviando…' : p.messageId ? 'anexos pendentes' : 'não enviada'}</span>
                     </div>
-                    <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(p.content) }} />
+                    {p.content && <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(p.content) }} />}
+                    {p.files.length > 0 && (
+                      <div className="upl">
+                        {p.files.map((f, i) => (
+                          <div key={i} className={`upl__row ${i < p.done ? 'is-done' : ''}`}>
+                            <IconPaperclip size={13} />
+                            <span className="upl__name">{f.name}</span>
+                            <small>{humanSize(f.size)}</small>
+                            {i < p.done ? <span className="upl__ok">✓</span>
+                              : p.status === 'sending' && p.current === f.name
+                                ? <span className="upl__bar"><span style={{ width: `${Math.round((p.progress ?? 0) * 100)}%` }} /></span>
+                                : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {p.status === 'failed' && (
                       <div className="msg__fail">
                         <IconAlert size={14} /> {p.error}
                         <button className="link-btn" onClick={() => deliver(p)}>Tentar de novo</button>
-                        <button className="link-btn" onClick={() => setPending((l) => l.filter((x) => x.tmp !== p.tmp))}>Descartar</button>
+                        {p.messageId
+                          ? <button className="link-btn" onClick={() => keepWithoutRest(p)}>Manter sem os anexos restantes</button>
+                          : <button className="link-btn" onClick={() => setPending((l) => l.filter((x) => x.tmp !== p.tmp))}>Descartar</button>}
                       </div>
                     )}
                   </div>

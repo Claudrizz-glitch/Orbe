@@ -84,7 +84,7 @@ Mensagens de sistema (entradas de membros, etc.) são ignoradas. Canais sem perm
 | 2 | Escrever/editar/duplicar/excluir mensagens, identidades (avatar, cor, mesclar), editor com formatação, datas editáveis | ✅ |
 | — | Banco Neon (Postgres) + migração do backup local | ✅ |
 | 3 | Arrastar e soltar (mensagens, canais entre categorias, categorias, espaços — com toque), ordem manual/cronológica, mover mensagens entre canais, respostas, fixadas, link interno | ✅ |
-| 4 | Envio de anexos pelo ORBE | — |
+| 4 | Anexos: enviar (botão, arrastar, colar; até 25 MB, em partes), visualizador de imagens, download individual e .zip do canal, adicionar/remover em mensagens existentes, cópia ao duplicar | ✅ |
 | 5 | Seleção e exportação HTML/ZIP | — |
 | 6 | Personalização visual (temas, cores, fontes, densidade) | — |
 | 7 | Busca, filtros, tags, backup e restauração | — |
