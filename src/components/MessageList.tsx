@@ -10,10 +10,11 @@ import { CSS } from '@dnd-kit/utilities';
 import { api } from '@/lib/client/api';
 import { plainText, renderMarkdown } from '@/lib/markdown';
 import type { Attachment, Channel, Identity, Message, MessagePage, ReplyPreview, SortMode } from '@/lib/types';
-import { IconAlert, IconClock, IconDownload, IconEdit, IconExternal, IconGrip, IconHash, IconLink, IconMore, IconMove, IconPaperclip, IconPin, IconRefresh, IconReply, IconSort, IconTrash } from './ui/Icons';
+import { IconAlert, IconCheckSquare, IconClock, IconDownload, IconEdit, IconExternal, IconGrip, IconHash, IconLink, IconMore, IconMove, IconPaperclip, IconPin, IconRefresh, IconReply, IconSort, IconTrash } from './ui/Icons';
 import { Lightbox } from './Lightbox';
 import { humanSize, uploadAttachment } from '@/lib/client/upload';
 import { downloadBlob, makeZip, uniqueName } from '@/lib/client/zip';
+import type { ExportRequest } from './ExportDialog';
 import { useContextMenu, type MenuEntry } from './ui/ContextMenu';
 import { useConfirm } from './ui/ConfirmDialog';
 import { useToast } from './ui/Toasts';
@@ -35,6 +36,7 @@ interface Props {
   onManageIdentities: () => void;
   onSortModeChange: (mode: SortMode) => Promise<void>;
   onOpenChannel: (channelId: string, messageId?: string) => void;
+  onExport: (req: ExportRequest) => void;
 }
 
 /** Mensagem local ainda não confirmada pelo servidor */
@@ -146,6 +148,9 @@ interface RowProps {
   onRemoveAttachment: (a: Attachment) => void;
   onAddFiles: (files: File[]) => void;
   uploading: string | null;
+  selecting: boolean;
+  selected: boolean;
+  onSelectClick: (shift: boolean) => void;
 }
 
 const MessageRow = memo(function MessageRow(p: RowProps) {
@@ -161,10 +166,19 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
     <div ref={setNodeRef} style={style} className={isDragging ? 'is-dragging' : undefined}>
       {p.newDay && <div className="day-sep">{fmtDay.format(d)}</div>}
       <article id={`msg-${m.id}`}
-        className={`msg ${p.cont ? 'msg--cont' : ''} ${m.reply_to_id ? 'msg--reply' : ''} ${p.editing ? 'is-editing' : ''} ${p.tapped ? 'is-tapped' : ''} ${m.pinned_at ? 'is-pinned' : ''}`}
+        className={`msg ${p.cont ? 'msg--cont' : ''} ${m.reply_to_id ? 'msg--reply' : ''} ${p.editing ? 'is-editing' : ''} ${p.tapped ? 'is-tapped' : ''} ${m.pinned_at ? 'is-pinned' : ''} ${p.selecting ? 'is-selecting' : ''} ${p.selected ? 'is-selected' : ''}`}
         style={{ '--idc': idn?.color ?? 'var(--text)' } as React.CSSProperties}
-        onContextMenu={p.editing ? undefined : ctx.onContextMenu(p.menu)}
-        onClick={(e) => { if (window.matchMedia('(hover: none)').matches && !(e.target as HTMLElement).closest('a,button,textarea')) p.onTap(); }}>
+        aria-selected={p.selecting ? p.selected : undefined}
+        onContextMenu={p.editing || p.selecting ? undefined : ctx.onContextMenu(p.menu)}
+        onMouseDown={(e) => { if (p.selecting && e.shiftKey) e.preventDefault(); /* evita selecionar texto no Shift+clique */ }}
+        onClick={(e) => {
+          if (p.selecting) {
+            if (!(e.target as HTMLElement).closest('a')) { e.preventDefault(); p.onSelectClick(e.shiftKey); }
+            return;
+          }
+          if (window.matchMedia('(hover: none)').matches && !(e.target as HTMLElement).closest('a,button,textarea')) p.onTap();
+        }}>
+        {p.selecting && <span className="msg__check" aria-hidden="true">{p.selected ? '✓' : ''}</span>}
         {m.reply_to_id && (
           <button className="msg__reply" onClick={() => p.onJump(m.reply_to_id!)} title="Ir para a mensagem original">
             {p.reply ? <><b>{replyIdn?.name ?? 'Sem autor'}</b><span>{plainText(p.reply.content) || 'anexo'}</span></> : <span>Mensagem original indisponível</span>}
@@ -216,11 +230,11 @@ const MessageRow = memo(function MessageRow(p: RowProps) {
                   {e.footer && <small className="muted">{e.footer}</small>}
                 </div>
               ))}
-              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} onOpen={() => p.onOpenImage(a)} />)}</div>}
+              {p.atts && <div className="atts">{p.atts.map((a) => <AttachmentView key={a.id} a={a} onOpen={p.selecting ? undefined : () => p.onOpenImage(a)} />)}</div>}
             </>
           )}
         </div>
-        {!p.editing && (
+        {!p.editing && !p.selecting && (
           <div className="msg__actions" role="toolbar" aria-label="Ações da mensagem">
             <button className="icon-btn icon-btn--sm" title="Responder" aria-label="Responder" onClick={p.onReply}><IconReply size={15} /></button>
             <button className="icon-btn icon-btn--sm" title="Editar texto" aria-label="Editar mensagem" onClick={p.onEditStart}><IconEdit size={15} /></button>
@@ -252,6 +266,10 @@ export function MessageList(props: Props) {
   const [viewer, setViewer] = useState<{ images: Attachment[]; start: number } | null>(null);
   const [zipping, setZipping] = useState<string | null>(null);
   const [uploadingTo, setUploadingTo] = useState<{ id: string; name: string } | null>(null);
+  // Seleção para exportar
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const anchorSel = useRef<string | null>(null);
   const [tapped, setTapped] = useState<string | null>(null);
   const [headerSlot, setHeaderSlot] = useState<HTMLElement | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -617,11 +635,63 @@ export function MessageList(props: Props) {
       <button className={`hbtn ${zipping ? 'is-on' : ''}`} title="Baixar todos os anexos deste canal (.zip)" onClick={downloadAll} disabled={!!zipping}>
         {zipping ? <span className="spinner" /> : <IconPaperclip size={16} />}<span>{zipping ? `Baixando ${zipping}` : 'Anexos'}</span>
       </button>
+      <button className={`hbtn ${selecting ? 'is-on' : ''}`} title="Selecionar mensagens para exportar" onClick={() => (selecting ? stopSelecting() : setSelecting(true))}>
+        <IconCheckSquare size={16} /><span>{selecting ? 'Selecionando' : 'Selecionar'}</span>
+      </button>
     </>,
     headerSlot,
   );
 
-  const composer = (
+  // ── Seleção ──────────────────────────────────────────
+  function toggleSelect(id: string, shift: boolean) {
+    const a = anchorSel.current; // lido antes de atualizar a âncora
+    setSelected((cur) => {
+      const next = new Set(cur);
+      if (shift && a && a !== id) {
+        // Intervalo: tudo entre a última mensagem clicada e esta
+        const i = messages.findIndex((m) => m.id === a);
+        const j = messages.findIndex((m) => m.id === id);
+        if (i >= 0 && j >= 0) {
+          const [lo, hi] = i < j ? [i, j] : [j, i];
+          const on = !cur.has(id) || cur.has(a);
+          for (let k = lo; k <= hi; k++) { if (on) next.add(messages[k].id); else next.delete(messages[k].id); }
+          return next;
+        }
+      }
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    anchorSel.current = id;
+  }
+  function stopSelecting() { setSelecting(false); setSelected(new Set()); anchorSel.current = null; }
+  useEffect(() => {
+    if (!selecting) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !document.querySelector('.overlay')) stopSelecting(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selecting]);
+
+  const selectionBar = (
+    <div className="selbar" role="toolbar" aria-label="Seleção de mensagens">
+      <span className="selbar__count"><b>{selected.size}</b> {selected.size === 1 ? 'selecionada' : 'selecionadas'}</span>
+      <span className="selbar__hint">Clique para marcar · Shift+clique marca um intervalo</span>
+      <button className="btn btn--sm btn--ghost" onClick={() => setSelected(new Set(messages.map((m) => m.id)))}>
+        Selecionar todas{hasMore ? ' (carregadas)' : ''}
+      </button>
+      <button className="btn btn--sm btn--ghost" onClick={() => setSelected(new Set())} disabled={!selected.size}>Limpar</button>
+      <button className="btn btn--sm" onClick={stopSelecting}>Cancelar</button>
+      <button className="btn btn--sm btn--primary" disabled={!selected.size}
+        onClick={() => props.onExport({ kind: 'messages', ids: messages.filter((m) => selected.has(m.id)).map((m) => m.id), title: `#${channel.name}`, from: `#${channel.name}` })}>
+        Exportar…
+      </button>
+      <button className="btn btn--sm" title="Exportar o canal inteiro, incluindo mensagens ainda não carregadas"
+        onClick={() => props.onExport({ kind: 'channels', channelIds: [channel.id], title: `#${channel.name}` })}>
+        Canal inteiro…
+      </button>
+    </div>
+  );
+
+  const composer = selecting ? selectionBar : (
     <Composer
       key={channel.id}
       channel={channel}
@@ -708,7 +778,8 @@ export function MessageList(props: Props) {
                     <MessageRow key={m.id} m={m} identities={identities} newDay={newDay} cont={cont}
                       reply={m.reply_to_id ? byId.get(m.reply_to_id) ?? replies.get(m.reply_to_id) : undefined}
                       atts={atts.get(m.id)} editing={isEditing ? editing : null} tapped={tapped === m.id}
-                      draggable={manual && !editing} menu={menuFor(m)}
+                      draggable={manual && !editing && !selecting} menu={menuFor(m)}
+                      selecting={selecting} selected={selected.has(m.id)} onSelectClick={(shift) => toggleSelect(m.id, shift)}
                       onTap={() => setTapped((t) => (t === m.id ? null : m.id))}
                       onEditStart={() => setEditing({ id: m.id, text: m.content, saving: false })}
                       onEditChange={(text) => setEditing((e) => (e ? { ...e, text } : e))}

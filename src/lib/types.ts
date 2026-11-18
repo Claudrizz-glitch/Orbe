@@ -125,6 +125,18 @@ export interface DiscordStatus {
   jobs: ImportJob[];
 }
 
+export interface ExportChannel {
+  id: string; name: string; topic: string | null; icon: string | null; sort_mode: string;
+  space: string; category: string | null;
+}
+export interface ExportData {
+  channels: ExportChannel[];
+  messages: Message[];
+  attachments: Attachment[];
+  identities: Identity[];
+  replies: { id: string; identity_id: string | null; content: string }[];
+}
+
 export const SPACE_COLS = 'id, name, icon, icon_path, color, appearance, position';
 export const CATEGORY_COLS = 'id, space_id, name, icon, color, collapsed, position';
 export const CHANNEL_COLS = 'id, space_id, category_id, name, icon, color, topic, sort_mode, position';

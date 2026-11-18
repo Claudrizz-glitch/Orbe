@@ -29,7 +29,9 @@ export const IconCheck = (p: P) => <Svg {...p}><path d="m5 12 5 5 9-10" /></Svg>
 export const IconAlert = (p: P) => <Svg {...p}><path d="M12 8v5M12 16.5v.5" /><circle cx="12" cy="12" r="9" /></Svg>;
 export const IconCloudOff = (p: P) => <Svg {...p}><path d="M3 3l18 18M8 7.5A6 6 0 0 1 17.6 10 4 4 0 0 1 20 17M17 18H7a5 5 0 0 1-1.6-9.7" /></Svg>;
 export const IconDiscord = (p: P) => <Svg {...p}><path d="M8.5 8.2c2.3-.7 4.7-.7 7 0M8 16c2.6.9 5.4.9 8 0" /><path d="M7.2 7c-1.5.6-2.6 1.3-2.6 1.3S3 11.5 3.2 16c1.3 1.6 3.3 2.2 3.3 2.2l1-1.7M16.8 7c1.5.6 2.6 1.3 2.6 1.3S21 11.5 20.8 16c-1.3 1.6-3.3 2.2-3.3 2.2l-1-1.7" /><circle cx="9.3" cy="12.6" r="1.1" /><circle cx="14.7" cy="12.6" r="1.1" /></Svg>;
-export const IconClock = (p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Svg>;
+export const IconCheckSquare = (p: P) => <Svg {...p}><rect x="4" y="4" width="16" height="16" rx="3.5" /><path d="m8.5 12 2.5 2.5 4.5-5" /></Svg>;
+export const IconExport = (p: P) => <Svg {...p}><path d="M12 15V4M8 8l4-4 4 4M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5" /></Svg>;
+export const IconClock =(p: P) => <Svg {...p}><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></Svg>;
 export const IconPaperclip = (p: P) => <Svg {...p}><path d="m20 11.5-7.8 7.8a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8" /></Svg>;
 export const IconImage = (p: P) => <Svg {...p}><rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="9" cy="10" r="1.8" /><path d="m4 18 5-5 4 4 3-3 4 4" /></Svg>;
 export const IconChevronLeft = (p: P) => <Svg {...p}><path d="m15 6-6 6 6 6" /></Svg>;

@@ -2,6 +2,7 @@
 
 import type { Category, Channel, Identity, SortMode, Space } from '@/lib/types';
 import { MessageList, type ChannelOption } from './MessageList';
+import type { ExportRequest } from './ExportDialog';
 import { IconDiscord, IconHash, IconMenu, IconOrbit, IconPlus, IconSidebar } from './ui/Icons';
 
 interface Props {
@@ -23,6 +24,7 @@ interface Props {
   onJumped: () => void;
   onSortModeChange: (mode: SortMode) => Promise<void>;
   onOpenChannel: (channelId: string, messageId?: string) => void;
+  onExport: (req: ExportRequest) => void;
 }
 
 export function MainPanel(p: Props) {
@@ -51,7 +53,7 @@ export function MainPanel(p: Props) {
       {channel ? (
         <MessageList key={channel.id} channel={channel} identities={p.identities} channels={p.channelOptions}
           activeIdentityId={p.activeIdentityId} onIdentityChange={p.onIdentityChange} onManageIdentities={p.onManageIdentities}
-          jumpTo={p.jumpTo} onJumped={p.onJumped} onSortModeChange={p.onSortModeChange} onOpenChannel={p.onOpenChannel} />
+          jumpTo={p.jumpTo} onJumped={p.onJumped} onSortModeChange={p.onSortModeChange} onOpenChannel={p.onOpenChannel} onExport={p.onExport} />
       ) : (
         <div className="main__body">
           {!p.hasSpaces ? (

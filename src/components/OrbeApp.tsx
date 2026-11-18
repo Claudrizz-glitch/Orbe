@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Category, Channel, ImportJob, Space, Workspace } from '@/lib/types';
 import { DiscordImportDialog } from './DiscordImportDialog';
 import { IdentitiesDialog } from './IdentitiesDialog';
+import { ExportDialog, type ExportRequest } from './ExportDialog';
 import { shift, useWorkspace } from '@/lib/client/useWorkspace';
 import { api } from '@/lib/client/api';
 import { SpaceRail } from './SpaceRail';
@@ -13,7 +14,7 @@ import { EntityDialog, type EntityValues } from './EntityDialog';
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
 import type { MenuEntry } from './ui/ContextMenu';
-import { IconDown, IconEdit, IconFolder, IconHash, IconTrash, IconUp } from './ui/Icons';
+import { IconDown, IconEdit, IconExport, IconFolder, IconHash, IconTrash, IconUp } from './ui/Icons';
 
 type Dialog =
   | { kind: 'space'; space?: Space }
@@ -89,6 +90,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   // Identidade ativa no campo de escrita (lembrada neste dispositivo)
   const [activeIdentity, setActiveIdentity] = useState<string | null>(null);
   const [jumpTo, setJumpTo] = useState<string | null>(null);
+  const [exportReq, setExportReq] = useState<ExportRequest | null>(null);
   const [identitiesOpen, setIdentitiesOpen] = useState(false);
   useEffect(() => { setActiveIdentity(readLS<string | null>('orbe:active-identity', null)); }, []);
   const chooseIdentity = (id: string) => { setActiveIdentity(id); writeLS('orbe:active-identity', id); };
@@ -207,6 +209,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       'separator',
       { label: 'Mover para cima', icon: <IconUp size={16} />, ...move('spaces', ids, s.id, -1) },
       { label: 'Mover para baixo', icon: <IconDown size={16} />, ...move('spaces', ids, s.id, 1) },
+      { label: 'Exportar espaço…', icon: <IconExport size={16} />, onSelect: () => setExportReq({ kind: 'channels', channelIds: w.ws.channels.filter((c) => c.space_id === s.id).map((c) => c.id), title: s.name }) },
       'separator',
       { label: 'Excluir espaço', icon: <IconTrash size={16} />, danger: true, onSelect: () => removeSpace(s) },
     ];
@@ -220,6 +223,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       'separator',
       { label: 'Mover para cima', icon: <IconUp size={16} />, ...move('categories', ids, c.id, -1) },
       { label: 'Mover para baixo', icon: <IconDown size={16} />, ...move('categories', ids, c.id, 1) },
+      { label: 'Exportar categoria…', icon: <IconExport size={16} />, onSelect: () => setExportReq({ kind: 'channels', channelIds: w.ws.channels.filter((x) => x.category_id === c.id).map((x) => x.id), title: c.name }) },
       'separator',
       { label: 'Excluir categoria', icon: <IconTrash size={16} />, danger: true, onSelect: () => removeCategory(c) },
     ];
@@ -232,6 +236,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       'separator',
       { label: 'Mover para cima', icon: <IconUp size={16} />, ...move('channels', ids, c.id, -1) },
       { label: 'Mover para baixo', icon: <IconDown size={16} />, ...move('channels', ids, c.id, 1) },
+      { label: 'Exportar canal…', icon: <IconExport size={16} />, onSelect: () => setExportReq({ kind: 'channels', channelIds: [c.id], title: `#${c.name}` }) },
       'separator',
       { label: 'Excluir canal', icon: <IconTrash size={16} />, danger: true, onSelect: () => removeChannel(c) },
     ];
@@ -367,12 +372,18 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
         onJumped={() => setJumpTo(null)}
         onSortModeChange={async (mode) => { if (channel) { await w.updateChannel(channel.id, { sort_mode: mode }); toast.success(mode === 'manual' ? 'Ordem manual: arraste as mensagens para reorganizar.' : 'Mensagens ordenadas pela data exibida.'); } }}
         onOpenChannel={openChannel}
+        onExport={setExportReq}
         onImport={() => setImportOpen(true)}
         onToggleSidebar={toggleNav}
         onOpenDrawer={() => setDrawer(true)}
         onCreateSpace={() => setDialog({ kind: 'space' })}
         onCreateChannel={() => space && setDialog({ kind: 'channel', spaceId: space.id, categoryId: null })}
       />
+
+      {exportReq && (
+        <ExportDialog request={exportReq} spaces={w.spaces} categories={w.ws.categories} channels={w.ws.channels}
+          onClose={() => setExportReq(null)} onDone={(msg) => toast.success(msg)} />
+      )}
 
       {identitiesOpen && (
         <IdentitiesDialog onClose={() => setIdentitiesOpen(false)} onChanged={() => { void w.refresh().catch(() => {}); }} />

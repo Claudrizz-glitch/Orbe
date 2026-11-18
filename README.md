@@ -85,7 +85,7 @@ Mensagens de sistema (entradas de membros, etc.) são ignoradas. Canais sem perm
 | — | Banco Neon (Postgres) + migração do backup local | ✅ |
 | 3 | Arrastar e soltar (mensagens, canais entre categorias, categorias, espaços — com toque), ordem manual/cronológica, mover mensagens entre canais, respostas, fixadas, link interno | ✅ |
 | 4 | Anexos: enviar (botão, arrastar, colar; até 25 MB, em partes), visualizador de imagens, download individual e .zip do canal, adicionar/remover em mensagens existentes, cópia ao duplicar | ✅ |
-| 5 | Seleção e exportação HTML/ZIP | — |
+| 5 | Exportação: seleção de mensagens (clique, Shift+clique, todas), canal, vários canais, categoria e espaço; HTML único (imagens embutidas) ou ZIP com anexos e caminhos relativos; tema claro/escuro automático, pronto para impressão | ✅ |
 | 6 | Personalização visual (temas, cores, fontes, densidade) | — |
 | 7 | Busca, filtros, tags, backup e restauração | — |
 | 8 | PWA, tempo real, responsividade final, revisão de segurança | — |
