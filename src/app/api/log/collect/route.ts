@@ -1,7 +1,7 @@
 import { ApiError, json, protectedRoute, readBody } from '@/lib/server/api';
 import { store } from '@/lib/server/store';
 import * as v from '@/lib/server/validate';
-import { COLORS, audit, describeChannel, isLogChannel, logTarget } from '@/lib/server/audit';
+import { COLORS, addLogAuthors, audit, describeChannel, discordReadable, isLogChannel, logTarget } from '@/lib/server/audit';
 import type { Embed, Identity, Message } from '@/lib/types';
 
 export const maxDuration = 60;
@@ -25,19 +25,11 @@ export const POST = protectedRoute(async (req) => {
   const { channelId: logId } = await logTarget();
 
   // Nomes legíveis para as marcações do Discord dentro dos registros
-  const chanMap = new Map<string, string>(); // id do Discord → "#canal (Espaço)"
-  const userMap = new Map<string, string>(); // id do Discord → nome da identidade
-  for (const r of await s.select<{ external_id: string; local_id: string }>('import_map', { eq: { source: 'discord', kind: 'channel' } })) {
-    chanMap.set(r.external_id, await describeChannel(r.local_id));
-  }
-  const idMaps = await s.select<{ external_id: string; local_id: string }>('import_map', { eq: { source: 'discord', kind: 'identity' } });
-  const names = new Map((await s.select<{ id: string; name: string }>('identities', { cols: 'id, name' })).map((i) => [i.id, i.name]));
-  for (const r of idMaps) if (names.has(r.local_id)) userMap.set(r.external_id, names.get(r.local_id)!);
-  const owner = (await s.select<{ id: string; name: string }>('identities', { cols: 'id, name', eq: { is_owner: true }, limit: 1 }))[0];
-
-  const readable = (t: string | undefined) => t
-    ?.replace(/<#(\d+)>/g, (_, id: string) => chanMap.get(id) ?? `#canal fora do ORBE (ID ${id})`)
-    .replace(/<@!?(\d+)>/g, (_, id: string) => `@${userMap.get(id) ?? owner?.name ?? 'usuário'}`);
+  const readable = await discordReadable();
+  // Mensagens futuras destes autores (reimportações) também vão direto ao #log
+  const authorIds = (await s.select<{ external_id: string }>('import_map', { eq: { source: 'discord', kind: 'identity' }, in: { local_id: ids } }))
+    .map((r) => r.external_id).filter((x) => /^\d+$/.test(x));
+  await addLogAuthors(authorIds);
 
   let moved = 0;
   const origins = new Map<string, number>();

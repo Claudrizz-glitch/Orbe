@@ -196,3 +196,51 @@ export async function auditMessageDeleted(m: Message, attachmentIds: string[], f
     ref: { event: 'message.delete', message_id: m.id, channel_id: m.channel_id, identity_id: m.identity_id, display_at: m.display_at, content: m.content },
   });
 }
+
+// ── Autores do Discord cujas mensagens vão direto ao #log (bots de registro) ──
+const K_AUTHORS = 'log.discord_authors';
+
+/** IDs do Discord (autores) cujas mensagens viram registros soltos no #log. */
+export async function logAuthors(): Promise<Set<string>> {
+  const s = store();
+  const [r] = await s.select<{ value: { ids?: string[] } }>('settings', { cols: 'value', eq: { key: K_AUTHORS } });
+  if (r?.value?.ids) return new Set(r.value.ids);
+  // Primeira vez: deduz dos registros já levados ao #log
+  const logId = await getSetting(K_CHANNEL);
+  const ids = new Set<string>();
+  if (logId) {
+    for (const m of await s.select<{ extra: Message['extra'] & { collected_from?: string; discord?: { author?: string } } }>('messages', { cols: 'extra', eq: { channel_id: logId } })) {
+      if (m.extra?.collected_from && m.extra.discord?.author) ids.add(m.extra.discord.author);
+    }
+  }
+  if (ids.size) await saveLogAuthors(ids);
+  return ids;
+}
+async function saveLogAuthors(ids: Set<string>) {
+  await store().remove('settings', { eq: { key: K_AUTHORS } });
+  await store().insert('settings', [{ key: K_AUTHORS, value: { ids: [...ids] } }]);
+}
+export async function addLogAuthors(add: string[]) {
+  if (!add.length) return;
+  const cur = await logAuthors();
+  add.forEach((x) => cur.add(x));
+  await saveLogAuthors(cur);
+}
+
+/** Troca marcações do Discord (<#canal>, <@usuário>) por nomes do ORBE. */
+export async function discordReadable(): Promise<(t: string | undefined) => string | undefined> {
+  const s = store();
+  const chanMap = new Map<string, string>();
+  for (const r of await s.select<{ external_id: string; local_id: string }>('import_map', { eq: { source: 'discord', kind: 'channel' } })) {
+    chanMap.set(r.external_id, await describeChannel(r.local_id));
+  }
+  const names = new Map((await s.select<{ id: string; name: string }>('identities', { cols: 'id, name' })).map((i) => [i.id, i.name]));
+  const userMap = new Map<string, string>();
+  for (const r of await s.select<{ external_id: string; local_id: string }>('import_map', { eq: { source: 'discord', kind: 'identity' } })) {
+    if (names.has(r.local_id)) userMap.set(r.external_id, names.get(r.local_id)!);
+  }
+  const owner = (await s.select<{ name: string }>('identities', { cols: 'name', eq: { is_owner: true }, limit: 1 }))[0];
+  return (t) => t
+    ?.replace(/<#(\d+)>/g, (_, id: string) => chanMap.get(id) ?? `#canal fora do ORBE (ID ${id})`)
+    .replace(/<@!?(\d+)>/g, (_, id: string) => `@${userMap.get(id) ?? owner?.name ?? 'usuário'}`);
+}

@@ -4,7 +4,8 @@ import { store, persist } from '../store';
 import { nextPosition } from '../workspace';
 import { CH, DiscordError, cdn, dget, download, type DAttachment, type DChannel, type DGuild, type DMessage } from './client';
 import { convertContent, convertEmbeds, safeFileName } from './convert';
-import type { ImportJob, ImportStats } from '@/lib/types';
+import type { Embed, ImportJob, ImportStats } from '@/lib/types';
+import { describeChannel, discordReadable, logAuthors, logTarget } from '../audit';
 
 const SOURCE = 'discord';
 /** Tipos de mensagem com conteúdo do usuário (padrão, resposta, comandos). */
@@ -273,7 +274,9 @@ async function ensureIdentities(j: JobRow, msgs: DMessage[], ownerId: string | n
 }
 
 // ── Etapa 2: mensagens ─────────────────────────────────────
-async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null) {
+interface LogCtx { authors: Set<string>; channelId?: string; readable?: (t: string | undefined) => string | undefined }
+
+async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null, lg: LogCtx) {
   const s = store();
   let batch: DMessage[];
   try {
@@ -294,7 +297,14 @@ async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null) {
   j.stats.skipped_messages += batch.length - msgs.length;
 
   if (msgs.length) {
-    const authors = await ensureIdentities(j, msgs, ownerId);
+    // Autores de registro (ex.: Loritta) não ganham perfil: viram registros soltos no #log
+    const toLog = (m: DMessage) => !m.webhook_id && lg.authors.has(m.author.id);
+    const authors = await ensureIdentities(j, msgs.filter((m) => !toLog(m)), ownerId);
+    if (msgs.some(toLog) && !lg.channelId) {
+      lg.channelId = (await logTarget()).channelId;
+      lg.readable = await discordReadable();
+    }
+    const origin = msgs.some(toLog) ? await describeChannel(ch.lid) : '';
 
     // Respostas: mensagens já importadas + as deste lote
     const refIds = [...new Set(msgs.map((m) => m.message_reference?.message_id).filter((x): x is string => !!x))];
@@ -315,6 +325,19 @@ async function importBatch(j: JobRow, ch: ChanState, ownerId: string | null) {
       const stickers = (m.sticker_items ?? []).map((x) => x.name);
       if (!content && !m.attachments?.length && !embeds.length && stickers.length) content = `*[figurinha: ${stickers.join(', ')}]*`;
       const refId = m.message_reference?.message_id;
+      if (toLog(m)) {
+        const r = lg.readable!;
+        const logEmbeds: Embed[] = embeds.map((e) => ({
+          ...e, description: r(e.description), title: r(e.title),
+          footer: [e.footer, `Origem: ${origin} · registrado por ${m.author.global_name || m.author.username}`].filter(Boolean).join(' · '),
+        }));
+        return {
+          id: ids.get(m.id), channel_id: lg.channelId!, identity_id: null, reply_to_id: null,
+          content: (r(content) ?? '').slice(0, 200000), display_at: m.timestamp, edited_at: m.edited_timestamp, pinned_at: null,
+          position: Date.parse(m.timestamp) / 1000, source_ref: `discord:${m.id}`,
+          extra: { discord: { id: m.id, author: m.author.id }, embeds: logEmbeds, system: true, origin, collected_from: m.author.global_name || m.author.username },
+        };
+      }
       return {
         id: ids.get(m.id),
         channel_id: ch.lid,
@@ -391,6 +414,7 @@ export async function runStep(id: string, budgetMs = 20000): Promise<JobRow | nu
 
   const [owner] = await store().select<{ id: string }>('identities', { cols: 'id', eq: { is_owner: true }, limit: 1 });
   const ownerId = owner?.id ?? null;
+  const lg: LogCtx = { authors: await logAuthors() };
 
   try {
     if (j.state.phase === 'structure') await importStructure(j);
@@ -410,7 +434,7 @@ export async function runStep(id: string, budgetMs = 20000): Promise<JobRow | nu
         j.state.idx++;
         continue;
       }
-      await importBatch(j, ch, ownerId);
+      await importBatch(j, ch, ownerId, lg);
       await saveJob(j); // salva a cada lote: nada se perde se a conexão cair
     }
     if (j.state.phase === 'done') {
