@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Channel } from '@/lib/types';
-import { uploadPage } from '@/lib/client/upload';
+import { uploadAttachment, uploadPage } from '@/lib/client/upload';
 import { Modal } from './ui/Modal';
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
@@ -83,14 +83,40 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
         .then(() => setSaveState('saved'))
         .catch(() => { setSaveState('error'); toast.error('A página não conseguiu salvar no ORBE. Tente de novo.'); }));
     };
+    // Lista dos arquivos da página, reaproveitada entre pedidos (a página pode pedir dezenas de imagens)
+    let filesCache: ReturnType<typeof loadPageFiles> | null = null;
+    const pageFiles = () => (filesCache ??= loadPageFiles(channel.id).catch((err) => { filesCache = null; throw err; }));
     const onMsg = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow) return;
-      const d = e.data as { orbe?: string; items?: unknown; id?: number; args?: { id?: string } | null };
+      const d = e.data as { orbe?: string; items?: unknown; id?: number; args?: { id?: string; name?: string; type?: string; blob?: unknown } | null };
       const win = frame.current.contentWindow;
       const reply = (result: unknown, error?: string) => win?.postMessage({ orbe: 'reply', id: d.id, result, error }, '*');
+      // Ler um arquivo da página (a página é isolada e não acessa /api/files: recebe o conteúdo)
+      if (d?.orbe === 'read') {
+        pageFiles().then(async ({ files }) => {
+          const a = files.find((x) => x.id === d.args?.id);
+          if (!a) { reply(null, 'Arquivo não encontrado nesta página.'); return; }
+          const r = await fetch(fileHref(a.storage_path), { credentials: 'same-origin' });
+          if (!r.ok) throw new Error();
+          reply({ blob: await r.blob(), name: a.file_name, type: a.mime_type, size: a.size_bytes });
+        }).catch(() => reply(null, 'Não foi possível ler o arquivo.'));
+        return;
+      }
+      // Guardar um arquivo enviado pela página (ex.: a capa de uma obra) nos arquivos dela
+      if (d?.orbe === 'upload') {
+        const blob = d.args?.blob;
+        if (!(blob instanceof Blob)) { reply(null, 'Arquivo inválido.'); return; }
+        const name = String(d.args?.name || 'arquivo').slice(0, 200);
+        api<{ message_id: string }>(`/api/channels/${channel.id}/page/files`, { method: 'POST' })
+          .then(({ message_id }) => uploadAttachment(message_id, new File([blob], name, { type: blob.type || d.args?.type || 'application/octet-stream' })))
+          .then((a) => { filesCache = null; refreshCount(); reply({ id: a.id, name: a.file_name, type: a.mime_type, size: a.size_bytes }); })
+          .catch((err) => reply(null, (err as Error).message || 'Não foi possível enviar o arquivo.'));
+        return;
+      }
       // Pedidos da página: listar e abrir os arquivos dela
       if (d?.orbe === 'files' || d?.orbe === 'open') {
-        loadPageFiles(channel.id).then(({ files }) => {
+        filesCache = null;
+        pageFiles().then(({ files }) => {
           if (d.orbe === 'files') {
             reply(files.map((a) => ({ id: a.id, name: a.file_name, type: a.mime_type, size: a.size_bytes, kind: viewKind(a) })));
             return;

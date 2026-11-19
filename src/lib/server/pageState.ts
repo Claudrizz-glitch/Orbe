@@ -80,9 +80,13 @@ try{Object.defineProperty(window,"localStorage",{configurable:true,get:function(
 addEventListener("pagehide",function(){if(T){clearTimeout(T);send()}});
 var Q={},N=0,IN=window.parent!==window;
 addEventListener("message",function(e){if(e.source!==window.parent)return;var d=e.data;if(d&&d.orbe==="reply"&&Q[d.id]){var q=Q[d.id];delete Q[d.id];if(d.error)q[1](new Error(d.error));else q[0](d.result)}});
-function ask(t,a){return new Promise(function(res,rej){if(!IN){rej(new Error("Disponível só dentro do ORBE."));return}var id=++N;Q[id]=[res,rej];
-window.parent.postMessage({orbe:t,id:id,args:a||null},O);setTimeout(function(){if(Q[id]){delete Q[id];rej(new Error("O ORBE não respondeu. Recarregue a página do ORBE (Ctrl+F5) e tente de novo."))}},10000)})}
-window.orbe={inside:IN,files:function(){return ask("files")},open:function(id){return ask("open",{id:String(id)})}};
+function ask(t,a,ms){return new Promise(function(res,rej){if(!IN){rej(new Error("Disponível só dentro do ORBE."));return}var id=++N;Q[id]=[res,rej];
+window.parent.postMessage({orbe:t,id:id,args:a||null},O);setTimeout(function(){if(Q[id]){delete Q[id];rej(new Error("O ORBE não respondeu. Recarregue a página do ORBE (Ctrl+F5) e tente de novo."))}},ms||10000)})}
+var U={};
+window.orbe={inside:IN,files:function(){return ask("files")},open:function(id){return ask("open",{id:String(id)})},
+read:function(id){return ask("read",{id:String(id)},30000)},
+url:function(id){id=String(id);return U[id]||(U[id]=ask("read",{id:id},30000).then(function(r){return URL.createObjectURL(r.blob)},function(e){delete U[id];throw e}))},
+upload:function(blob,name){return ask("upload",{blob:blob,name:String(name||"arquivo"),type:blob&&blob.type},120000)}};
 })();</script>`;
 }
 
