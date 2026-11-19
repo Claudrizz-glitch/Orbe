@@ -81,7 +81,7 @@ addEventListener("pagehide",function(){if(T){clearTimeout(T);send()}});
 var Q={},N=0,IN=window.parent!==window;
 addEventListener("message",function(e){if(e.source!==window.parent)return;var d=e.data;if(d&&d.orbe==="reply"&&Q[d.id]){var q=Q[d.id];delete Q[d.id];if(d.error)q[1](new Error(d.error));else q[0](d.result)}});
 function ask(t,a){return new Promise(function(res,rej){if(!IN){rej(new Error("Disponível só dentro do ORBE."));return}var id=++N;Q[id]=[res,rej];
-window.parent.postMessage({orbe:t,id:id,args:a||null},O);setTimeout(function(){if(Q[id]){delete Q[id];rej(new Error("O ORBE não respondeu."))}},10000)})}
+window.parent.postMessage({orbe:t,id:id,args:a||null},O);setTimeout(function(){if(Q[id]){delete Q[id];rej(new Error("O ORBE não respondeu. Recarregue a página do ORBE (Ctrl+F5) e tente de novo."))}},10000)})}
 window.orbe={inside:IN,files:function(){return ask("files")},open:function(id){return ask("open",{id:String(id)})}};
 })();</script>`;
 }

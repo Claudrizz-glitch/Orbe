@@ -10,7 +10,7 @@ import { fileHeaders } from '../files';
  */
 const COLS: Record<Table, string[]> = {
   spaces: ['id', 'name', 'icon', 'icon_path', 'color', 'appearance', 'position', 'created_at', 'updated_at'],
-  categories: ['id', 'space_id', 'name', 'icon', 'color', 'collapsed', 'position', 'created_at', 'updated_at'],
+  categories: ['id', 'space_id', 'name', 'icon', 'color', 'collapsed', 'position', 'parent_id', 'created_at', 'updated_at'],
   channels: ['id', 'space_id', 'category_id', 'name', 'icon', 'color', 'topic', 'sort_mode', 'position', 'kind', 'page_path', 'created_at', 'updated_at'],
   identities: ['id', 'name', 'avatar_path', 'description', 'color', 'is_owner', 'position', 'created_at', 'updated_at'],
   messages: ['id', 'channel_id', 'identity_id', 'reply_to_id', 'content', 'content_format', 'display_at', 'position', 'pinned_at', 'edited_at', 'source_ref', 'extra', 'created_at', 'updated_at'],

@@ -397,3 +397,8 @@ a.hbtn { text-decoration: none; }
 .pfiles__open:hover { background: rgba(255,255,255,.06); }
 .pfiles__open b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pfiles__open small { color: var(--text-3, #8b8aa0); flex-shrink: 0; }
+
+/* ── Subcategorias (categorias dentro de categorias) ───────────── */
+.cat__subs { margin-left: 10px; padding-left: 6px; border-left: 1px solid var(--border, rgba(255,255,255,.08)); }
+.cat--sub { margin-top: 2px; }
+.cat--sub .cat__head { padding-top: 6px; }

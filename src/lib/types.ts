@@ -22,6 +22,8 @@ export interface Category {
   color: string | null;
   collapsed: boolean;
   position: number;
+  /** Categoria-mãe (subcategoria), ou null no nível principal */
+  parent_id: string | null;
 }
 
 export type SortMode = 'manual' | 'chronological';
@@ -143,7 +145,7 @@ export interface ExportData {
 }
 
 export const SPACE_COLS = 'id, name, icon, icon_path, color, appearance, position';
-export const CATEGORY_COLS = 'id, space_id, name, icon, color, collapsed, position';
+export const CATEGORY_COLS = 'id, space_id, name, icon, color, collapsed, position, parent_id';
 export const CHANNEL_COLS = 'id, space_id, category_id, name, icon, color, topic, sort_mode, position, kind, page_path';
 export const IDENTITY_COLS = 'id, name, avatar_path, description, color, is_owner, position';
 export const MESSAGE_COLS = 'id, channel_id, identity_id, reply_to_id, content, display_at, edited_at, pinned_at, position, extra, created_at, updated_at';

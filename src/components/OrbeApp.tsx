@@ -11,6 +11,7 @@ import { SpaceRail } from './SpaceRail';
 import { ChannelSidebar } from './ChannelSidebar';
 import { MainPanel } from './MainPanel';
 import { EntityDialog, type EntityValues } from './EntityDialog';
+import { descendantsOf, pathOf, siblingsOf, treeOrder } from '@/lib/categoryTree';
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
 import type { MenuEntry } from './ui/ContextMenu';
@@ -18,7 +19,7 @@ import { IconDown, IconEdit, IconExport, IconFolder, IconHash, IconPage, IconTra
 
 type Dialog =
   | { kind: 'space'; space?: Space }
-  | { kind: 'category'; spaceId: string; category?: Category }
+  | { kind: 'category'; spaceId: string; category?: Category; parentId?: string | null }
   | { kind: 'channel'; spaceId: string; categoryId: string | null; channel?: Channel; newKind?: 'chat' | 'page' }
   | null;
 
@@ -204,7 +205,11 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   const space = useMemo(() => w.ws.spaces.find((s) => s.id === spaceId) ?? null, [w.ws.spaces, spaceId]);
   const channel = useMemo(() => w.ws.channels.find((c) => c.id === channelId) ?? null, [w.ws.channels, channelId]);
   const category = useMemo(
-    () => (channel?.category_id ? w.ws.categories.find((c) => c.id === channel.category_id) ?? null : null),
+    () => {
+      const c = channel?.category_id ? w.ws.categories.find((x) => x.id === channel.category_id) ?? null : null;
+      // no cabeçalho, o caminho completo: "Mãe › Subcategoria"
+      return c ? { ...c, name: pathOf(w.ws.categories, c.id) } : null;
+    },
     [w.ws.categories, channel],
   );
 
@@ -231,15 +236,19 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   };
 
   const categoryMenu = (c: Category): MenuEntry[] => {
-    const ids = w.categoriesOf(c.space_id).map((x) => x.id);
+    const all = w.categoriesOf(c.space_id);
+    const ids = siblingsOf(all, c).map((x) => x.id);
+    const subtree = new Set([c.id, ...descendantsOf(all, c.id)]);
     return [
       { label: 'Editar categoria', icon: <IconEdit size={16} />, onSelect: () => setDialog({ kind: 'category', spaceId: c.space_id, category: c }) },
+      { label: 'Mover para dentro de…', icon: <IconFolder size={16} />, onSelect: () => setDialog({ kind: 'category', spaceId: c.space_id, category: c }) },
+      { label: 'Nova subcategoria', icon: <IconFolder size={16} />, onSelect: () => setDialog({ kind: 'category', spaceId: c.space_id, parentId: c.id }) },
       { label: 'Novo canal aqui', icon: <IconHash size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: c.space_id, categoryId: c.id }) },
       { label: 'Nova página HTML aqui', icon: <IconPage size={16} />, onSelect: () => setDialog({ kind: 'channel', spaceId: c.space_id, categoryId: c.id, newKind: 'page' }) },
       'separator',
       { label: 'Mover para cima', icon: <IconUp size={16} />, ...move('categories', ids, c.id, -1) },
       { label: 'Mover para baixo', icon: <IconDown size={16} />, ...move('categories', ids, c.id, 1) },
-      { label: 'Exportar categoria…', icon: <IconExport size={16} />, onSelect: () => setExportReq({ kind: 'channels', channelIds: w.ws.channels.filter((x) => x.category_id === c.id).map((x) => x.id), title: c.name }) },
+      { label: 'Exportar categoria…', icon: <IconExport size={16} />, onSelect: () => setExportReq({ kind: 'channels', channelIds: w.ws.channels.filter((x) => x.category_id && subtree.has(x.category_id)).map((x) => x.id), title: c.name }) },
       'separator',
       { label: 'Excluir categoria', icon: <IconTrash size={16} />, danger: true, onSelect: () => removeCategory(c) },
     ];
@@ -276,15 +285,18 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
 
   async function removeCategory(c: Category) {
     const nCh = w.ws.channels.filter((x) => x.category_id === c.id).length;
+    const nSub = w.ws.categories.filter((x) => x.parent_id === c.id).length;
+    const parent = c.parent_id ? w.ws.categories.find((x) => x.id === c.parent_id) : null;
     const choice = await confirm({
       title: `Excluir a categoria “${c.name}”?`,
       danger: true,
       confirmLabel: 'Excluir categoria',
-      message: nCh === 0
-        ? <p>A categoria está vazia.</p>
-        : <p>Ela contém {plural(nCh, 'canal', 'canais')}. O que fazer com eles?</p>,
+      message: <>
+        {nCh === 0 ? <p>A categoria não tem canais diretos.</p> : <p>Ela contém {plural(nCh, 'canal', 'canais')}. O que fazer com eles?</p>}
+        {nSub > 0 && <p className="muted">{plural(nSub, 'subcategoria', 'subcategorias')} não {nSub === 1 ? 'será excluída: sobe' : 'serão excluídas: sobem'} um nível{parent ? ` (para “${parent.name}”)` : ''}.</p>}
+      </>,
       choices: nCh === 0 ? undefined : [
-        { value: 'keep', label: 'Manter os canais', hint: 'Eles ficam no espaço, sem categoria.' },
+        { value: 'keep', label: 'Manter os canais', hint: parent ? `Eles vão para “${parent.name}”.` : 'Eles ficam no espaço, sem categoria.' },
         { value: 'delete', label: 'Excluir os canais também', hint: 'Transcrição e anexos ficam guardados no #log.' },
       ],
     });
@@ -312,8 +324,12 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
       if (dialog.space) { await w.updateSpace(dialog.space.id, base); toast.success('Espaço atualizado.'); }
       else { const s = await w.createSpace(base); setSpaceId(s.id); setChannelId(null); toast.success('Espaço criado.'); }
     } else if (dialog.kind === 'category') {
-      if (dialog.category) { await w.updateCategory(dialog.category.id, base); toast.success('Categoria atualizada.'); }
-      else { await w.createCategory(dialog.spaceId, base); toast.success('Categoria criada.'); }
+      const withParent = { ...base, parent_id: v.parent_id };
+      if (dialog.category) {
+        const moved = (dialog.category.parent_id ?? null) !== (v.parent_id ?? null);
+        await w.updateCategory(dialog.category.id, moved ? withParent : base);
+        toast.success(moved ? 'Categoria movida.' : 'Categoria atualizada.');
+      } else { await w.createCategory(dialog.spaceId, withParent); toast.success(v.parent_id ? 'Subcategoria criada.' : 'Categoria criada.'); }
     } else {
       const input = { ...base, topic: v.topic, category_id: v.category_id, kind: v.channel_kind };
       if (dialog.channel) { await w.updateChannel(dialog.channel.id, input); toast.success('Canal atualizado.'); }
@@ -432,16 +448,22 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
           kind={dialog.kind}
           title={
             dialog.kind === 'space' ? (dialog.space ? 'Editar espaço' : 'Criar espaço')
-              : dialog.kind === 'category' ? (dialog.category ? 'Editar categoria' : 'Criar categoria')
+              : dialog.kind === 'category' ? (dialog.category ? 'Editar categoria' : dialog.parentId ? 'Criar subcategoria' : 'Criar categoria')
                 : dialog.channel ? 'Editar canal' : dialog.newKind === 'page' ? 'Criar página HTML' : 'Criar canal'
           }
           submitLabel={(dialog.kind === 'space' && dialog.space) || (dialog.kind === 'category' && dialog.category) || (dialog.kind === 'channel' && dialog.channel) ? 'Salvar' : 'Criar'}
           initial={
             dialog.kind === 'space' ? dialog.space
-              : dialog.kind === 'category' ? dialog.category
+              : dialog.kind === 'category' ? (dialog.category ?? { parent_id: dialog.parentId ?? null })
                 : dialog.channel ? { ...dialog.channel, channel_kind: dialog.channel.kind ?? 'chat' } : { category_id: dialog.categoryId, channel_kind: dialog.newKind ?? 'chat' }
           }
-          categories={dialog.kind === 'channel' ? w.categoriesOf(dialog.spaceId) : undefined}
+          categories={dialog.kind === 'channel' ? treeOrder(w.categoriesOf(dialog.spaceId)).map(({ cat }) => ({ ...cat, name: pathOf(w.categoriesOf(dialog.spaceId), cat.id) })) : undefined}
+          parentOptions={dialog.kind === 'category' ? (() => {
+            const all = w.categoriesOf(dialog.spaceId);
+            const self = dialog.category?.id;
+            const hide = self ? new Set([self, ...descendantsOf(all, self)]) : new Set<string>();
+            return treeOrder(all).filter(({ cat }) => !hide.has(cat.id)).map(({ cat, depth }) => ({ id: cat.id, label: `${'   '.repeat(depth)}${depth ? '↳ ' : ''}${cat.name}` }));
+          })() : undefined}
           onSubmit={submitDialog}
           onClose={() => setDialog(null)}
         />

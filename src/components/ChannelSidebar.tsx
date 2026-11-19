@@ -8,6 +8,7 @@ import {
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Category, Channel, Space } from '@/lib/types';
+import { childrenOf, descendantsOf, rootsOf } from '@/lib/categoryTree';
 import type { SyncState } from '@/lib/client/useWorkspace';
 import { useContextMenu, type MenuEntry } from './ui/ContextMenu';
 import { IconAlert, IconCheck, IconChevron, IconCloudOff, IconFolder, IconHash, IconLogout, IconMore, IconPage, IconPlus, IconRefresh, IconUsers } from './ui/Icons';
@@ -67,14 +68,14 @@ function Zone({ id, children, className }: { id: string; children?: React.ReactN
 
 // ── Cabeçalho de categoria (arrastável; aceita canais soltos sobre ele) ──
 function CategorySection(props: {
-  cat: Category; menu: MenuEntry[]; onToggle: () => void; onCreate: () => void; children: React.ReactNode; dropTarget: boolean;
+  cat: Category; menu: MenuEntry[]; onToggle: () => void; onCreate: () => void; children: React.ReactNode; dropTarget: boolean; depth: number;
 }) {
   const { cat } = props;
   const ctx = useContextMenu();
   const s = useSortable({ id: CAT + cat.id, data: { type: 'category', container: cat.id } });
   return (
     <section ref={s.setNodeRef} style={{ transform: CSS.Translate.toString(s.transform), transition: s.transition }}
-      className={`cat ${cat.collapsed ? 'is-collapsed' : ''} ${s.isDragging ? 'is-dragging' : ''} ${props.dropTarget ? 'is-drop' : ''}`}>
+      className={`cat ${props.depth ? 'cat--sub' : ''} ${cat.collapsed ? 'is-collapsed' : ''} ${s.isDragging ? 'is-dragging' : ''} ${props.dropTarget ? 'is-drop' : ''}`}>
       <div className="cat__head" style={{ '--c': cat.color ?? 'var(--text-muted)' } as React.CSSProperties}
         onContextMenu={ctx.onContextMenu(props.menu)}>
         <button className="cat__toggle" onClick={props.onToggle} aria-expanded={!cat.collapsed} {...s.attributes} {...s.listeners}>
@@ -172,7 +173,10 @@ export function ChannelSidebar(p: Props) {
 
     if (d.type === 'category') {
       if (!overId || overId === activeId) return;
-      const ids = p.categories.map((c) => CAT + c.id);
+      const me = p.categories.find((c) => CAT + c.id === activeId);
+      const other = p.categories.find((c) => CAT + c.id === overId);
+      if (!me || !other || (me.parent_id ?? null) !== (other.parent_id ?? null)) return; // só entre irmãs
+      const ids = (me.parent_id ? childrenOf(p.categories, me.parent_id) : rootsOf(p.categories)).map((c) => CAT + c.id);
       const next = arrayMove(ids, ids.indexOf(activeId), ids.indexOf(overId)).map((x) => x.slice(CAT.length));
       p.onReorderCategories(next);
       return;
@@ -197,6 +201,38 @@ export function ChannelSidebar(p: Props) {
     if (!c) return null;
     return <ChannelRow key={id} c={c} active={id === p.activeChannelId} menu={p.channelMenu(c)} onSelect={() => p.onSelectChannel(id)} sortable={sortable} />;
   };
+
+  // Uma camada da árvore de categorias (subcategorias aparecem dentro da mãe, como pastas)
+  const renderLevel = (cats: Category[], depth: number): React.ReactNode => (
+    <SortableContext items={cats.map((c) => CAT + c.id)} strategy={verticalListSortingStrategy}>
+      {cats.map((cat) => {
+        const ids = layout[cat.id] ?? [];
+        const subs = childrenOf(p.categories, cat.id);
+        let activeInside = false;
+        if (cat.collapsed && p.activeChannelId) {
+          const inTree = new Set([cat.id, ...descendantsOf(p.categories, cat.id)]);
+          const ch = byId.get(p.activeChannelId);
+          activeInside = !!ch?.category_id && inTree.has(ch.category_id);
+        }
+        return (
+          <CategorySection key={cat.id} cat={cat} depth={depth} menu={p.categoryMenu(cat)} dropTarget={overCat === cat.id && draggingChannel}
+            onToggle={() => p.onToggleCategory(cat.id)} onCreate={() => p.onCreateChannel(cat.id)}>
+            {!cat.collapsed && subs.length > 0 && <div className="cat__subs">{renderLevel(subs, depth + 1)}</div>}
+            {!cat.collapsed && dragging?.type !== 'category' && (
+              <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+                <Zone id={cat.id} className="chan-zone">
+                  {ids.length
+                    ? <ul className="chan-list">{ids.map((id) => row(id))}</ul>
+                    : (!subs.length || draggingChannel) && <button className="cat__empty" onClick={() => p.onCreateChannel(cat.id)}>{draggingChannel ? 'Solte aqui' : '+ criar canal'}</button>}
+                </Zone>
+              </SortableContext>
+            )}
+            {activeInside && <ul className="chan-list">{row(p.activeChannelId!, false)}</ul>}
+          </CategorySection>
+        );
+      })}
+    </SortableContext>
+  );
 
   const loose = layout[ROOT] ?? [];
   const empty = loose.length === 0 && p.categories.length === 0;
@@ -233,28 +269,7 @@ export function ChannelSidebar(p: Props) {
             )}
           </SortableContext>
 
-          <SortableContext items={p.categories.map((c) => CAT + c.id)} strategy={verticalListSortingStrategy}>
-            {p.categories.map((cat) => {
-              const ids = layout[cat.id] ?? [];
-              return (
-                <CategorySection key={cat.id} cat={cat} menu={p.categoryMenu(cat)} dropTarget={overCat === cat.id && draggingChannel}
-                  onToggle={() => p.onToggleCategory(cat.id)} onCreate={() => p.onCreateChannel(cat.id)}>
-                  {!cat.collapsed && dragging?.type !== 'category' && (
-                    <SortableContext items={ids} strategy={verticalListSortingStrategy}>
-                      <Zone id={cat.id} className="chan-zone">
-                        {ids.length
-                          ? <ul className="chan-list">{ids.map((id) => row(id))}</ul>
-                          : <button className="cat__empty" onClick={() => p.onCreateChannel(cat.id)}>{draggingChannel ? 'Solte aqui' : '+ criar canal'}</button>}
-                      </Zone>
-                    </SortableContext>
-                  )}
-                  {cat.collapsed && ids.includes(p.activeChannelId ?? '') && (
-                    <ul className="chan-list">{row(p.activeChannelId!, false)}</ul>
-                  )}
-                </CategorySection>
-              );
-            })}
-          </SortableContext>
+          {renderLevel(rootsOf(p.categories), 0)}
 
           <DragOverlay dropAnimation={null}>
             {overlayChannel && (

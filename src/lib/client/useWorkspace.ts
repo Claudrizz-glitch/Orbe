@@ -7,7 +7,7 @@ import type { Category, Channel, Space, Workspace } from '../types';
 export type SyncState = 'idle' | 'saving' | 'error' | 'offline';
 
 export interface SpaceInput { name: string; icon: string | null; color: string | null }
-export interface CategoryInput { name: string; icon: string | null; color: string | null }
+export interface CategoryInput { name: string; icon: string | null; color: string | null; parent_id?: string | null }
 export interface ChannelInput {
   name: string; icon: string | null; color: string | null; topic: string | null; category_id: string | null;
   sort_mode?: 'manual' | 'chronological';

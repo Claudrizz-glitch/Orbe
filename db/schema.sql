@@ -53,6 +53,8 @@ create table if not exists categories (
   unique (id, space_id)
 );
 create index if not exists categories_space_position_idx on categories (space_id, position);
+-- Subcategorias: uma categoria pode ficar dentro de outra (como pastas)
+alter table categories add column if not exists parent_id uuid references categories (id) on delete set null;
 
 create table if not exists channels (
   id           uuid primary key default gen_random_uuid(),

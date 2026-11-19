@@ -12,6 +12,7 @@ export interface EntityValues {
   topic: string | null;
   category_id: string | null;
   channel_kind: 'chat' | 'page';
+  parent_id: string | null;
 }
 
 interface Props {
@@ -20,13 +21,15 @@ interface Props {
   kind: 'space' | 'category' | 'channel';
   initial?: Partial<EntityValues>;
   categories?: Category[];
+  /** Para categorias: onde ela pode ficar (já sem ela mesma e suas subcategorias), com o rótulo indentado */
+  parentOptions?: { id: string; label: string }[];
   onSubmit: (v: EntityValues) => Promise<void>;
   onClose: () => void;
 }
 
 const placeholders = { space: 'Ex.: Escrita', category: 'Ex.: Ruptura', channel: 'Ex.: personagens' };
 
-export function EntityDialog({ title, submitLabel, kind, initial, categories, onSubmit, onClose }: Props) {
+export function EntityDialog({ title, submitLabel, kind, initial, categories, parentOptions, onSubmit, onClose }: Props) {
   const [v, setV] = useState<EntityValues>({
     name: initial?.name ?? '',
     icon: initial?.icon ?? null,
@@ -34,6 +37,7 @@ export function EntityDialog({ title, submitLabel, kind, initial, categories, on
     topic: initial?.topic ?? null,
     category_id: initial?.category_id ?? null,
     channel_kind: initial?.channel_kind ?? 'chat',
+    parent_id: initial?.parent_id ?? null,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,6 +95,17 @@ export function EntityDialog({ title, submitLabel, kind, initial, categories, on
               <small className="muted">{v.channel_kind === 'page' ? 'As mensagens do canal ficam guardadas e voltam se ele virar conversa de novo.' : 'O HTML da página fica guardado e volta se ele virar página de novo.'}</small>
             )}
           </div>
+        )}
+
+        {kind === 'category' && parentOptions && (
+          <label className="field">
+            <span>Dentro de</span>
+            <select className="input" value={v.parent_id ?? ''} onChange={(e) => set('parent_id', e.target.value || null)}>
+              <option value="">Nível principal (nenhuma categoria)</option>
+              {parentOptions.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+            <small className="muted">Escolha uma categoria para usar esta como subcategoria dela — como uma pasta dentro de outra.</small>
+          </label>
         )}
 
         {kind === 'channel' && categories && (

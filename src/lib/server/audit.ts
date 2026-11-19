@@ -68,8 +68,15 @@ export async function describeChannel(channelId: string | null): Promise<string>
   const [c] = await s.select<{ name: string; space_id: string; category_id: string | null }>('channels', { cols: 'name, space_id, category_id', eq: { id: channelId } });
   if (!c) return '(canal excluído)';
   const [sp] = await s.select<{ name: string }>('spaces', { cols: 'name', eq: { id: c.space_id } });
-  const cat = c.category_id ? (await s.select<{ name: string }>('categories', { cols: 'name', eq: { id: c.category_id } }))[0] : null;
-  return `#${c.name} (${[sp?.name, cat?.name].filter(Boolean).join(' / ')})`;
+  // caminho da categoria, incluindo as categorias-mãe ("Mãe › Subcategoria")
+  const names: string[] = [];
+  for (let id = c.category_id, n = 0; id && n < 8; n++) {
+    const [cat] = await s.select<{ name: string; parent_id: string | null }>('categories', { cols: 'name, parent_id', eq: { id } });
+    if (!cat) break;
+    names.unshift(cat.name);
+    id = cat.parent_id;
+  }
+  return `#${c.name} (${[sp?.name, names.join(' › ')].filter(Boolean).join(' / ')})`;
 }
 
 export async function identityName(id: string | null): Promise<string> {

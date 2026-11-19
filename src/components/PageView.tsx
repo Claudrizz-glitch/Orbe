@@ -7,7 +7,7 @@ import { uploadPage } from '@/lib/client/upload';
 import { Modal } from './ui/Modal';
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
-import { IconClock, IconDownload, IconEdit, IconExternal, IconPaperclip } from './ui/Icons';
+import { IconClock, IconDownload, IconEdit, IconExternal, IconFolder, IconPaperclip } from './ui/Icons';
 import { api } from '@/lib/client/api';
 import { PageHistory } from './PageHistory';
 import { PageFiles, loadPageFiles } from './PageFiles';
@@ -153,7 +153,7 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
     <>
       {busy && <span className="hbtn"><span className="spinner" /><span>{busy}</span></span>}
       {src && saveState !== 'idle' && <span className="hbtn page__saved" title="Os dados desta página ficam salvos no ORBE">{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Não salvo' : 'Salvo no ORBE'}</span>}
-      {src && <button className="hbtn" onClick={() => setShowFiles(true)} title="PDFs e anexos que a página pode abrir"><IconPaperclip size={16} /><span>Arquivos{fileCount ? ` (${fileCount})` : ''}</span></button>}
+      {src && <button className="hbtn" onClick={() => setShowFiles(true)} title="Arquivos da página: PDFs e anexos que ela pode abrir"><IconFolder size={16} /><span>Arquivos{fileCount ? ` (${fileCount})` : ''}</span></button>}
       {src && <button className="hbtn" onClick={() => setShowHistory(true)} title="Histórico dos dados salvos pela página"><IconClock size={16} /><span>Histórico</span></button>}
       <button className="hbtn" onClick={openEditor} title="Editar o código HTML desta página"><IconEdit size={16} /><span>Editar HTML</span></button>
       <button className="hbtn" onClick={() => file.current?.click()} title="Trocar por um arquivo .html do seu computador"><IconPaperclip size={16} /><span>Substituir arquivo</span></button>

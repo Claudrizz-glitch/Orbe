@@ -70,7 +70,7 @@ function defaults(t: Table, r: Row): Row {
   const ts = now();
   switch (t) {
     case 'spaces': Object.assign(base, { id: randomUUID(), icon: null, icon_path: null, color: null, appearance: {}, position: 0, created_at: ts, updated_at: ts }); break;
-    case 'categories': Object.assign(base, { id: randomUUID(), icon: null, color: null, collapsed: false, position: 0, created_at: ts, updated_at: ts }); break;
+    case 'categories': Object.assign(base, { id: randomUUID(), icon: null, color: null, collapsed: false, position: 0, parent_id: null, created_at: ts, updated_at: ts }); break;
     case 'channels': Object.assign(base, { id: randomUUID(), category_id: null, icon: null, color: null, topic: null, sort_mode: 'manual', kind: 'chat', page_path: null, position: 0, created_at: ts, updated_at: ts }); break;
     case 'identities': Object.assign(base, { id: randomUUID(), avatar_path: null, description: null, color: null, is_owner: false, position: 0, created_at: ts, updated_at: ts }); break;
     case 'messages': Object.assign(base, { id: randomUUID(), identity_id: null, reply_to_id: null, content: '', content_format: 'markdown', display_at: ts, position: 0, pinned_at: null, edited_at: null, source_ref: null, extra: {}, created_at: ts, updated_at: ts }); break;
