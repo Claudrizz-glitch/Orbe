@@ -389,3 +389,11 @@ a.hbtn { text-decoration: none; }
 .phist__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .phist__now { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--accent, #a99cff); }
 .phist ul { margin: 6px 0 0; padding-left: 18px; font-size: 13px; line-height: 1.5; color: var(--text-2, #c9c8d6); }
+
+/* ── Arquivos de páginas HTML ──────────────────────────────────── */
+.pfiles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
+.pfiles li { display: flex; align-items: center; gap: 6px; }
+.pfiles__open { flex: 1; display: flex; justify-content: space-between; align-items: baseline; gap: 10px; text-align: left; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,.03); box-shadow: 0 0 0 1px rgba(255,255,255,.06); color: inherit; }
+.pfiles__open:hover { background: rgba(255,255,255,.06); }
+.pfiles__open b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pfiles__open small { color: var(--text-3, #8b8aa0); flex-shrink: 0; }

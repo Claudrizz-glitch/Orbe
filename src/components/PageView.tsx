@@ -10,6 +10,9 @@ import { useConfirm } from './ui/ConfirmDialog';
 import { IconClock, IconDownload, IconEdit, IconExternal, IconPaperclip } from './ui/Icons';
 import { api } from '@/lib/client/api';
 import { PageHistory } from './PageHistory';
+import { PageFiles, loadPageFiles } from './PageFiles';
+import { FileViewer, viewKind } from './FileViewer';
+import type { Attachment } from '@/lib/types';
 import { SANDBOX, fileHref } from './FileViewer';
 
 interface Props {
@@ -59,6 +62,12 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
   const frame = useRef<HTMLIFrameElement>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [showFiles, setShowFiles] = useState(false);
+  const [viewFile, setViewFile] = useState<Attachment | null>(null);
+  const [fileCount, setFileCount] = useState(0);
+  const refreshCount = () => { loadPageFiles(channel.id).then((r) => setFileCount(r.files.length)).catch(() => {}); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(refreshCount, [channel.id]);
 
   // Recebe os dados que a página grava e salva no ORBE (com histórico)
   useEffect(() => {
@@ -76,7 +85,23 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
     };
     const onMsg = (e: MessageEvent) => {
       if (!frame.current || e.source !== frame.current.contentWindow) return;
-      const d = e.data as { orbe?: string; items?: unknown };
+      const d = e.data as { orbe?: string; items?: unknown; id?: number; args?: { id?: string } | null };
+      const win = frame.current.contentWindow;
+      const reply = (result: unknown, error?: string) => win?.postMessage({ orbe: 'reply', id: d.id, result, error }, '*');
+      // Pedidos da página: listar e abrir os arquivos dela
+      if (d?.orbe === 'files' || d?.orbe === 'open') {
+        loadPageFiles(channel.id).then(({ files }) => {
+          if (d.orbe === 'files') {
+            reply(files.map((a) => ({ id: a.id, name: a.file_name, type: a.mime_type, size: a.size_bytes, kind: viewKind(a) })));
+            return;
+          }
+          const a = files.find((x) => x.id === d.args?.id);
+          if (!a) { reply(null, 'Arquivo não encontrado nesta página.'); return; }
+          setViewFile(a);
+          reply(true);
+        }).catch(() => reply(null, 'Não foi possível consultar os arquivos.'));
+        return;
+      }
       if (d?.orbe !== 'storage' || !d.items || typeof d.items !== 'object') return;
       pending = d.items as Record<string, string>;
       if (!timer) timer = setTimeout(flush, 400);
@@ -128,6 +153,7 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
     <>
       {busy && <span className="hbtn"><span className="spinner" /><span>{busy}</span></span>}
       {src && saveState !== 'idle' && <span className="hbtn page__saved" title="Os dados desta página ficam salvos no ORBE">{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Não salvo' : 'Salvo no ORBE'}</span>}
+      {src && <button className="hbtn" onClick={() => setShowFiles(true)} title="PDFs e anexos que a página pode abrir"><IconPaperclip size={16} /><span>Arquivos{fileCount ? ` (${fileCount})` : ''}</span></button>}
       {src && <button className="hbtn" onClick={() => setShowHistory(true)} title="Histórico dos dados salvos pela página"><IconClock size={16} /><span>Histórico</span></button>}
       <button className="hbtn" onClick={openEditor} title="Editar o código HTML desta página"><IconEdit size={16} /><span>Editar HTML</span></button>
       <button className="hbtn" onClick={() => file.current?.click()} title="Trocar por um arquivo .html do seu computador"><IconPaperclip size={16} /><span>Substituir arquivo</span></button>
@@ -160,6 +186,8 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
         </div>
       )}
 
+      {showFiles && <PageFiles channelId={channel.id} onClose={() => setShowFiles(false)} onOpen={(a) => setViewFile(a)} onChanged={refreshCount} />}
+      {viewFile && <FileViewer attachment={viewFile} onClose={() => setViewFile(null)} />}
       {showHistory && <PageHistory channelId={channel.id} onClose={() => setShowHistory(false)} onRestored={() => setFrameKey((k) => k + 1)} />}
 
       {editing !== null && (

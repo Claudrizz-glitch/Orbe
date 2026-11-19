@@ -153,7 +153,9 @@ async function importStructure(j: JobRow) {
     log(j, `Espaço “${guild.name}” já existia — continuando de onde parou.`);
   }
   j.space_id = spaceId;
-  if (guild.icon) {
+  // Ícone do servidor só em espaço sem ícone (um servidor pode ter sido mesclado em outro espaço)
+  const [sp] = await s.select<{ icon_path: string | null }>('spaces', { cols: 'icon_path', eq: { id: spaceId } });
+  if (guild.icon && !sp?.icon_path) {
     const p = `spaces/${spaceId}/icon.png`;
     if (await saveRemoteFile(cdn.guildIcon(gid, guild.icon), p)) await s.update('spaces', { eq: { id: spaceId } }, { icon_path: p }, 'id');
   }
