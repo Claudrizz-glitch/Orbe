@@ -69,7 +69,12 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
 export function useContextMenu() {
   const open = useContext(Ctx);
   return {
-    onContextMenu: (items: MenuEntry[]) => (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); open(e.clientX, e.clientY, items); },
+    onContextMenu: (items: MenuEntry[]) => (e: React.MouseEvent) => {
+      e.preventDefault(); e.stopPropagation();
+      // No celular, segurar o dedo inicia o arraste; o toque longo não deve abrir o menu por cima
+      if (document.querySelector('[aria-pressed="true"][aria-roledescription="sortable"]')) return;
+      open(e.clientX, e.clientY, items);
+    },
     fromButton: (items: MenuEntry[]) => (e: React.MouseEvent) => {
       e.stopPropagation();
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();

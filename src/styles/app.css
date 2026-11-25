@@ -281,3 +281,10 @@
   display: inline-flex; align-items: center; gap: 7px; max-width: calc(100vw - 24px); padding: 5px 12px; border-radius: 99px;
   background: color-mix(in srgb, var(--warning) 16%, var(--bg-elev, #11131b)); color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
   font-size: .78rem; box-shadow: 0 4px 18px rgba(0,0,0,.35); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Celular: segurar e arrastar canais, categorias e espaços (sem selecionar texto nem abrir o balão do sistema);
+   o menu de cada canal fica no botão ⋯, sempre visível em telas de toque */
+.chan__main, .cat__toggle, .orb { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+@media (hover: none) {
+  .chan__more, .cat__act { opacity: 1; }
+}
