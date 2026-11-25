@@ -15,7 +15,8 @@ import { descendantsOf, pathOf, siblingsOf, treeOrder } from '@/lib/categoryTree
 import { useToast } from './ui/Toasts';
 import { useConfirm } from './ui/ConfirmDialog';
 import type { MenuEntry } from './ui/ContextMenu';
-import { IconDown, IconEdit, IconExport, IconFolder, IconHash, IconPage, IconTrash, IconUp } from './ui/Icons';
+import { apagarCopiaLocal, useOffline } from '@/lib/client/offline';
+import { IconDown, IconEdit, IconExport, IconFolder, IconHash, IconPage, IconTrash, IconUp, IconCloudOff } from './ui/Icons';
 
 type Dialog =
   | { kind: 'space'; space?: Space }
@@ -34,6 +35,7 @@ const writeLS = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 export function OrbeApp({ initial }: { initial: Workspace }) {
+  const offline = useOffline();
   const w = useWorkspace(initial);
   const toast = useToast();
   const confirm = useConfirm();
@@ -338,6 +340,7 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   }
 
   async function logout() {
+    await apagarCopiaLocal();
     await run(() => api('/api/auth/logout', { method: 'POST' }));
     window.location.href = '/login';
   }
@@ -347,6 +350,12 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   return (
     <div className={`app ${navHidden ? 'nav-hidden' : ''} ${drawer ? 'drawer-open' : ''}`} style={spaceStyle}>
       <div className="drawer-scrim" onClick={() => setDrawer(false)} />
+      {offline !== null && (
+        <div className="offline-bar" role="status">
+          <IconCloudOff size={14} />
+          <span>Offline · {offline ? `cópia de ${new Date(offline).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}` : 'mostrando a última cópia'} · só leitura</span>
+        </div>
+      )}
       <div className="nav">
         <SpaceRail
           spaces={w.spaces}

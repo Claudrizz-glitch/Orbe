@@ -14,6 +14,7 @@ import { PageFiles, loadPageFiles } from './PageFiles';
 import { FileViewer, viewKind } from './FileViewer';
 import type { Attachment } from '@/lib/types';
 import { SANDBOX, fileHref } from './FileViewer';
+import { estaOffline, notarResposta } from '@/lib/client/offline';
 
 interface Props {
   channel: Channel;
@@ -61,7 +62,26 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
   const src = channel.page_path ? `/api/channels/${channel.id}/page/view?v=${encodeURIComponent(channel.page_path)}` : null;
   const frame = useRef<HTMLIFrameElement>(null);
   const [showHistory, setShowHistory] = useState(false);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error' | 'offline'>('idle');
+  // A página é buscada pelo ORBE e exibida via srcdoc (continua isolada pelo sandbox):
+  // assim a última versão fica guardada no aparelho e abre mesmo sem internet.
+  const [doc, setDoc] = useState<string | null>(null);
+  const [docErr, setDocErr] = useState<string | null>(null);
+  useEffect(() => {
+    if (!src) return;
+    let vivo = true;
+    setDoc(null); setDocErr(null);
+    fetch(src, { credentials: 'same-origin', cache: 'no-store' })
+      .then(async (r) => {
+        notarResposta(r);
+        if (r.status === 401) { window.location.href = '/login'; return; }
+        if (!r.ok) throw new Error(r.status === 503 ? 'off' : 'erro');
+        const t = await r.text();
+        if (vivo) setDoc(t);
+      })
+      .catch((e) => { if (vivo) setDocErr((e as Error).message === 'erro' ? 'Não foi possível abrir a página.' : 'Sem conexão, e esta página ainda não foi aberta neste aparelho.'); });
+    return () => { vivo = false; };
+  }, [src, frameKey]);
   const [showFiles, setShowFiles] = useState(false);
   const [viewFile, setViewFile] = useState<Attachment | null>(null);
   const [fileCount, setFileCount] = useState(0);
@@ -74,10 +94,13 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
     let pending: Record<string, string> | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inflight = Promise.resolve();
+    let avisado = false;
     const flush = () => {
       timer = null;
       const items = pending; pending = null;
       if (!items) return;
+      // Offline o ORBE é só leitura: o que a página mudar agora não é enviado
+      if (estaOffline()) { setSaveState('offline'); if (!avisado) { avisado = true; toast.error('Sem conexão: o que você mudar nesta página não será salvo.'); } return; }
       setSaveState('saving');
       inflight = inflight.then(() => api(`/api/channels/${channel.id}/page/state`, { method: 'PUT', body: { items } })
         .then(() => setSaveState('saved'))
@@ -178,7 +201,7 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
   const actions = slot && createPortal(
     <>
       {busy && <span className="hbtn"><span className="spinner" /><span>{busy}</span></span>}
-      {src && saveState !== 'idle' && <span className="hbtn page__saved" title="Os dados desta página ficam salvos no ORBE">{saveState === 'saving' ? 'Salvando…' : saveState === 'error' ? 'Não salvo' : 'Salvo no ORBE'}</span>}
+      {src && saveState !== 'idle' && <span className="hbtn page__saved" title="Os dados desta página ficam salvos no ORBE">{saveState === 'saving' ? 'Salvando…' : saveState === 'offline' ? 'Offline · não salvo' : saveState === 'error' ? 'Não salvo' : 'Salvo no ORBE'}</span>}
       {src && <button className="hbtn" onClick={() => setShowFiles(true)} title="Arquivos da página: PDFs e anexos que ela pode abrir"><IconFolder size={16} /><span>Arquivos{fileCount ? ` (${fileCount})` : ''}</span></button>}
       {src && <button className="hbtn" onClick={() => setShowHistory(true)} title="Histórico dos dados salvos pela página"><IconClock size={16} /><span>Histórico</span></button>}
       <button className="hbtn" onClick={openEditor} title="Editar o código HTML desta página"><IconEdit size={16} /><span>Editar HTML</span></button>
@@ -195,7 +218,9 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
       <input ref={file} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
       {src ? (
         <div className="page">
-          <iframe ref={frame} key={frameKey} className="page__frame" src={src} sandbox={SANDBOX} title={channel.name} />
+          {doc !== null
+            ? <iframe ref={frame} key={frameKey} className="page__frame" srcDoc={doc} sandbox={SANDBOX} title={channel.name} />
+            : <div className="empty">{docErr ? <p>{docErr}</p> : <span className="spinner" />}</div>}
         </div>
       ) : (
         <div className="main__body">

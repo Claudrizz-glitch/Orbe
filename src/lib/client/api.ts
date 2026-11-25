@@ -1,5 +1,7 @@
 'use client';
 
+import { notarFalha, notarResposta } from './offline';
+
 export class RequestError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -33,7 +35,12 @@ export async function api<T = unknown>(path: string, init: { method?: string; bo
       cache: 'no-store',
     });
   } catch {
+    notarFalha();
     throw new RequestError(0, 'Sem conexão com o servidor. Verifique sua internet e tente de novo.');
+  }
+  notarResposta(res);
+  if (res.status === 503 && res.headers.get('x-orbe-copia') === 'nenhuma') {
+    throw new RequestError(0, 'Sem conexão. Este conteúdo ainda não foi aberto neste aparelho, então não há cópia para mostrar.');
   }
   if (res.status === 401) {
     window.location.href = '/login';

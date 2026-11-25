@@ -275,3 +275,9 @@
   .msg__avatar { width: 34px; height: 34px; }
   .stats { grid-template-columns: repeat(2, 1fr); }
 }
+
+/* Offline: faixa discreta quando o ORBE mostra a cópia guardada no aparelho */
+.offline-bar { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 50%; transform: translateX(-50%); z-index: 90;
+  display: inline-flex; align-items: center; gap: 7px; max-width: calc(100vw - 24px); padding: 5px 12px; border-radius: 99px;
+  background: color-mix(in srgb, var(--warning) 16%, var(--bg-elev, #11131b)); color: var(--warning); border: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  font-size: .78rem; box-shadow: 0 4px 18px rgba(0,0,0,.35); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

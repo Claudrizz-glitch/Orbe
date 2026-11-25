@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google';
 import '@/styles/globals.css';
 import '@/styles/app.css';
 import '@/styles/editor.css';
+import { ServiceWorker } from '@/components/ServiceWorker';
 
 // Fontes servidas pelo próprio ORBE (baixadas no build, sem requisições ao Google em uso)
 const sans = Geist({ subsets: ['latin'], variable: '--font-geist', display: 'swap' });
@@ -12,7 +13,9 @@ export const metadata: Metadata = {
   title: 'ORBE',
   description: 'Seu universo pessoal de organização, escrita e conhecimento.',
   robots: { index: false, follow: false },
-  icons: { icon: '/icon.svg' },
+  icons: { icon: '/icon.svg', apple: '/icons/icon-192.png' },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: { capable: true, title: 'ORBE', statusBarStyle: 'black-translucent' },
 };
 
 export const viewport: Viewport = {
@@ -26,7 +29,7 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" data-theme="dark" className={`${sans.variable} ${mono.variable}`}>
-      <body>{children}</body>
+      <body>{children}<ServiceWorker /></body>
     </html>
   );
 }
