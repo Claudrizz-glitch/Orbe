@@ -288,3 +288,13 @@
 @media (hover: none) {
   .chan__more, .cat__act { opacity: 1; }
 }
+
+/* Celular: faixa fina na borda esquerda das páginas HTML para deslizar e abrir os canais
+   (toques dentro da página não chegam ao ORBE) */
+.page { position: relative; }
+.swipe-edge { display: none; }
+@media (max-width: 767px) {
+  .swipe-edge { display: block; position: absolute; left: 0; top: 0; bottom: 0; width: 14px; z-index: 2; touch-action: pan-y; }
+}
+/* O deslizar lateral é do ORBE (abrir/fechar canais), não o "voltar página" do navegador */
+html, body { overscroll-behavior-x: none; }

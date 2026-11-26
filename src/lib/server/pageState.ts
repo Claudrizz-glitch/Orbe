@@ -86,6 +86,7 @@ var U={};
 window.orbe={inside:IN,files:function(){return ask("files")},open:function(id){return ask("open",{id:String(id)})},
 read:function(id){return ask("read",{id:String(id)},30000)},
 url:function(id){id=String(id);return U[id]||(U[id]=ask("read",{id:id},30000).then(function(r){return URL.createObjectURL(r.blob)},function(e){delete U[id];throw e}))},
+menu:function(){if(IN)window.parent.postMessage({orbe:"menu"},O)},
 upload:function(blob,name){return ask("upload",{blob:blob,name:String(name||"arquivo"),type:blob&&blob.type},120000)}};
 })();</script>`;
 }

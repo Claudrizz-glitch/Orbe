@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import type { Attachment, Category, Channel, ImportJob, Space, Workspace } from '@/lib/types';
 import { DiscordImportDialog } from './DiscordImportDialog';
 import { IdentitiesDialog } from './IdentitiesDialog';
@@ -45,6 +45,36 @@ export function OrbeApp({ initial }: { initial: Workspace }) {
   const [dialog, setDialog] = useState<Dialog>(null);
   const [navHidden, setNavHidden] = useState(false);
   const [drawer, setDrawer] = useState(false);
+  const drawerRef = useRef(drawer);
+  drawerRef.current = drawer;
+  // Celular: deslizar o dedo para a direita abre a lista de canais; para a esquerda, fecha
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 767px)');
+    let ini: { x: number; y: number; t: number } | null = null;
+    const ignorar = (el: Element | null) => {
+      for (let e = el; e && e !== document.body; e = e.parentElement) {
+        if (e.matches('input, textarea, select, [contenteditable="true"], [contenteditable="plaintext-only"], .ctx-menu, .modal')) return true;
+        const cs = getComputedStyle(e);
+        if (/(auto|scroll)/.test(cs.overflowX) && e.scrollWidth > e.clientWidth + 2) return true; // conteúdo que rola de lado
+      }
+      return false;
+    };
+    const start = (ev: TouchEvent) => {
+      if (!mq.matches || ev.touches.length !== 1 || ignorar(ev.target as Element)) { ini = null; return; }
+      ini = { x: ev.touches[0].clientX, y: ev.touches[0].clientY, t: Date.now() };
+    };
+    const end = (ev: TouchEvent) => {
+      const s = ini; ini = null;
+      if (!s || document.querySelector('[aria-pressed="true"][aria-roledescription="sortable"]')) return;
+      const t = ev.changedTouches[0], dx = t.clientX - s.x, dy = t.clientY - s.y;
+      if (Date.now() - s.t > 700 || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.8) return;
+      if (dx > 0 && !drawerRef.current) setDrawer(true);
+      else if (dx < 0 && drawerRef.current) setDrawer(false);
+    };
+    document.addEventListener('touchstart', start, { passive: true });
+    document.addEventListener('touchend', end, { passive: true });
+    return () => { document.removeEventListener('touchstart', start); document.removeEventListener('touchend', end); };
+  }, []);
   const [ready, setReady] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [job, setJob] = useState<ImportJob | null>(null);

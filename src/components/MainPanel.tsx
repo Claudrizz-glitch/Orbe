@@ -55,7 +55,7 @@ export function MainPanel(p: Props) {
       </header>
 
       {channel && channel.kind === 'page' ? (
-        <PageView key={`${channel.id}-page`} channel={channel} onChannelUpdated={p.onChannelUpdated} onConvertToChat={p.onConvertToChat} />
+        <PageView key={`${channel.id}-page`} channel={channel} onChannelUpdated={p.onChannelUpdated} onConvertToChat={p.onConvertToChat} onOpenDrawer={p.onOpenDrawer} />
       ) : channel ? (
         <MessageList key={channel.id} channel={channel} identities={p.identities} channels={p.channelOptions}
           activeIdentityId={p.activeIdentityId} onIdentityChange={p.onIdentityChange} onManageIdentities={p.onManageIdentities}

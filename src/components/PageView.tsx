@@ -18,6 +18,7 @@ import { estaOffline, notarResposta } from '@/lib/client/offline';
 
 interface Props {
   channel: Channel;
+  onOpenDrawer?: () => void;
   onChannelUpdated: (c: Channel) => void;
   onConvertToChat: () => void;
 }
@@ -50,7 +51,9 @@ const TEMPLATE = (title: string) => `<!doctype html>
 </html>
 `;
 
-export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) {
+export function PageView({ channel, onChannelUpdated, onConvertToChat, onOpenDrawer }: Props) {
+  const abrirMenu = useRef(onOpenDrawer);
+  abrirMenu.current = onOpenDrawer;
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -151,6 +154,8 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
         }).catch(() => reply(null, 'Não foi possível consultar os arquivos.'));
         return;
       }
+      // A página pediu para abrir a lista de canais (ex.: deslizou para a direita na primeira aba)
+      if (d?.orbe === 'menu') { abrirMenu.current?.(); return; }
       if (d?.orbe !== 'storage' || !d.items || typeof d.items !== 'object') return;
       pending = d.items as Record<string, string>;
       if (!timer) timer = setTimeout(flush, 400);
@@ -218,6 +223,7 @@ export function PageView({ channel, onChannelUpdated, onConvertToChat }: Props) 
       <input ref={file} type="file" accept=".html,.htm,text/html" hidden onChange={(e) => { void pickFile(e.target.files?.[0]); e.target.value = ''; }} />
       {src ? (
         <div className="page">
+          <div className="swipe-edge only-mobile" aria-hidden="true" />
           {doc !== null
             ? <iframe ref={frame} key={frameKey} className="page__frame" srcDoc={doc} sandbox={SANDBOX} title={channel.name} />
             : <div className="empty">{docErr ? <p>{docErr}</p> : <span className="spinner" />}</div>}
